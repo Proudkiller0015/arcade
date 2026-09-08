@@ -337,7 +337,7 @@
     var cell = cellOf(g);
     if(cell.c < 0 || cell.c >= COLS){ wrapPos(g); cell = cellOf(g); }
     if(g.mode === 'eyes' && cell.c === HOME.c && cell.r === HOME.r){
-      g.mode = 'normal'; g.dir = {x:0,y:-1};
+      g.mode = 'house'; g.houseT = 2.5; g.dir = {x:0,y:-1}; return;   // respawn dwell in the pen
     }
     var opts = [], k, names = ['up','left','down','right'];
     for(k=0;k<names.length;k++){
@@ -356,12 +356,15 @@
       var dd = (nc-t.c)*(nc-t.c) + (nr-t.r)*(nr-t.r);
       if(dd < bestD){ bestD = dd; bestDir = opts[k]; }
     }
+    // small random turn at junctions so ghosts can't lock into a perfect loop
+    if(opts.length > 1 && Math.random() < 0.12) bestDir = opts[Math.floor(Math.random()*opts.length)];
     g.dir = bestDir;
   }
 
   function stepGhost(g, gi){
     var speed;
     g.tick++;
+    if(g.mode === 'house'){ g.houseT -= STEP; if(g.houseT <= 0){ g.mode='normal'; g.dir={x:0,y:-1}; } return; }
     if(g.mode === 'eyes') speed = 6;
     else if(g.mode === 'fright'){ if(g.tick % 2) return; speed = 3; }
     else { if(g.tick % cfg.skip === 0) return; speed = 3; }   // per-maze speed, still aligned
@@ -370,24 +373,24 @@
     wrapPos(g);
   }
 
-  var MODESEQ = ['scatter','chase','scatter','chase','scatter','chase','chase'];
-  var MODEDUR = [7,20,7,20,5,20,999];   // seconds
+  // Scatter/chase alternates FOREVER (it wraps) - the periodic reversal is what
+  // keeps ghosts from settling into an endless back-and-forth loop.
+  var MODESEQ = ['scatter','chase','scatter','chase'];
+  var MODEDUR = [7,20,7,20];   // seconds
   function updateModes(dt){
     if(frightTimer > 0){
       frightTimer -= dt;
       if(frightTimer <= 0){ for(var i=0;i<ghosts.length;i++) if(ghosts[i].mode==='fright') ghosts[i].mode='normal'; }
     }
-    if(modeIndex < MODESEQ.length-1){
-      modeTimer += dt;
-      if(modeTimer >= MODEDUR[modeIndex]){ modeTimer = 0; modeIndex++; reverseAll(); }
-    }
+    modeTimer += dt;
+    if(modeTimer >= MODEDUR[modeIndex]){ modeTimer = 0; modeIndex = (modeIndex+1) % MODESEQ.length; reverseAll(); }
   }
   function reverseAll(){
-    for(var i=0;i<ghosts.length;i++){ var g=ghosts[i]; if(g.mode!=='eyes'){ g.dir={x:-g.dir.x,y:-g.dir.y}; } }
+    for(var i=0;i<ghosts.length;i++){ var g=ghosts[i]; if(g.mode!=='eyes' && g.mode!=='house'){ g.dir={x:-g.dir.x,y:-g.dir.y}; } }
   }
   function enterFright(){
     frightTimer = cfg.fright; combo = 0;
-    for(var i=0;i<ghosts.length;i++){ if(ghosts[i].mode!=='eyes'){ ghosts[i].mode='fright'; ghosts[i].dir={x:-ghosts[i].dir.x,y:-ghosts[i].dir.y}; } }
+    for(var i=0;i<ghosts.length;i++){ if(ghosts[i].mode!=='eyes' && ghosts[i].mode!=='house'){ ghosts[i].mode='fright'; ghosts[i].dir={x:-ghosts[i].dir.x,y:-ghosts[i].dir.y}; } }
   }
 
   function checkGhosts(){
@@ -397,7 +400,7 @@
         if(g.mode === 'fright'){
           combo++; score += 200 * Math.pow(2, Math.min(combo-1,3)); g.mode = 'eyes';
           Snd.seq([72,79,84],0.06,'square',0.2);
-        } else if(g.mode !== 'eyes'){
+        } else if(g.mode !== 'eyes' && g.mode !== 'house'){
           loseLife(); return;
         }
       }
@@ -598,7 +601,9 @@
   // expose a tiny hook for the automated self-check
   window.__pac = { mazes:LAYOUTS.length, wallAt:wallAt, load:loadLevel, dotsLeft:function(){ return dotsLeft; },
                    start:PAC_START, cols:COLS, rows:ROWS, ghosts:function(){ return ghosts.length; },
-                   hasAudio: !!Snd };
+                   hasAudio: !!Snd,
+                   gpos:function(){ return ghosts.map(function(g){ return Math.round(g.px)+','+Math.round(g.py)+':'+g.mode; }).join('|'); },
+                   eatFirst:function(){ if(ghosts[0]){ ghosts[0].mode='eyes'; } } };
 })();
 </script>
 </body>
