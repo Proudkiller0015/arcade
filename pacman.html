@@ -339,6 +339,10 @@
   var DIRS = { left:{x:-1,y:0}, right:{x:1,y:0}, up:{x:0,y:-1}, down:{x:0,y:1} };
   function atCenter(e){ return ((e.px-12)%TILE===0) && ((e.py-12)%TILE===0); }
   function cellOf(e){ return { c:Math.round((e.px-12)/TILE), r:Math.round((e.py-12)/TILE) }; }
+  // Snap an entity onto its nearest cell centre. Eyes move 6px/step and only re-path
+  // at a centre; a ghost eaten mid-tile (fright ghosts sit on odd multiples of 3, off
+  // the 6px grid) would otherwise never hit a centre and drift straight through walls.
+  function snapCenter(e){ e.px = Math.round((e.px-12)/TILE)*TILE + 12; e.py = Math.round((e.py-12)/TILE)*TILE + 12; }
   function wrapPos(e){
     if(e.px < 0) e.px += COLS*TILE;
     else if(e.px >= COLS*TILE) e.px -= COLS*TILE;
@@ -496,7 +500,7 @@
       var g = ghosts[i];
       if(Math.abs(g.px-pac.px) < TILE*0.6 && Math.abs(g.py-pac.py) < TILE*0.6){
         if(g.mode === 'fright'){
-          combo++; score += 200 * Math.pow(2, Math.min(combo-1,3)); g.mode = 'eyes';
+          combo++; score += 200 * Math.pow(2, Math.min(combo-1,3)); g.mode = 'eyes'; snapCenter(g);
           Snd.seq([72,79,84],0.06,'square',0.2);
         } else if(g.mode === 'normal'){
           loseLife(); return;
@@ -749,7 +753,7 @@
     pcell:function(){ var c=cellOf(pac); return c.c+','+c.r; },
     gcell:function(i){ var c=cellOf(ghosts[i]); return c.c+','+c.r+':'+ghosts[i].mode; },
     gpos:function(){ return ghosts.map(function(g){ var c=cellOf(g); return c.c+','+c.r+':'+g.mode; }).join('|'); },
-    eatFirst:function(){ if(ghosts[0]) ghosts[0].mode='eyes'; },
+    eatFirst:function(){ if(ghosts[0]){ ghosts[0].mode='eyes'; snapCenter(ghosts[0]); } },
     sim:function(n){ for(var i=0;i<n && state==='playing';i++){
       stepPac(); if(state!=='playing') break;
       for(var g=0;g<ghosts.length;g++) stepGhost(ghosts[g], g);
