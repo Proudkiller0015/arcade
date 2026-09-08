@@ -99,7 +99,8 @@
       An arcade toy for the Velvet Bunny Cabaret.
       <span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is
       recorded anywhere. A fan-made tribute; not affiliated with, or endorsed by, Bandai Namco or
-      Bondage Club. Provided as-is, for fun.</span>
+      Bondage Club. Music: Pac-Man theme remix by arsenic1987, used with permission for
+      non-commercial use. Provided as-is, for fun.</span>
     </div>
   </aside>
 
@@ -145,9 +146,13 @@
       waka:function(){ if(!ok())return; wak^=1; t(wak?360:260, actx.currentTime, 0.06,'square',0.16, wak?260:360); }
     };
   })('pacman.muted');
-  // Not the (copyrighted) arcade jingle - this is the in-game "siren" wobble,
-  // which speeds up with the level. The waka on eating dots does the rest.
-  Snd.setSong([[55,.16],[60,.16],[64,.16],[60,.16]]);
+  // Background music: a Pac-Man theme remix by arsenic1987, supplied by the
+  // owner and used with the creator's permission for non-commercial use. The
+  // chiptune SFX (waka, eat, death) still come from Snd.
+  var BGM = null;
+  try { BGM = new Audio('pacman-theme.mp3'); BGM.loop = true; BGM.volume = 0.55; } catch(e){}
+  function bgmPlay(restart){ if(!BGM) return; BGM.muted = Snd.isMuted(); if(restart){ try{ BGM.currentTime = 0; }catch(e){} } var p = BGM.play(); if(p && p.catch) p.catch(function(){}); }
+  function bgmStop(){ if(BGM) BGM.pause(); }
 
   var COLS = 19, ROWS = 22, TILE = 24;
   var BW = COLS*TILE, BH = ROWS*TILE;
@@ -325,10 +330,19 @@
     var chase = (MODESEQ[modeIndex] === 'chase');
     if(!chase) return g.scatter;
     var p = cellOf(pac);
-    if(gi === 0) return { c:p.c, r:p.r };                                  // Blinky: straight for you
-    if(gi === 1) return { c:p.c + pac.dir.x*4, r:p.r + pac.dir.y*4 };      // Pinky: ahead of you
-    if(gi === 2) return { c:p.c + pac.dir.x*2, r:p.r + pac.dir.y*2 };      // Inky: cuts you off
-    var gc = cellOf(g);                                                    // Clyde: shy when close
+    if(gi === 0) return { c:p.c, r:p.r };                                  // Blinky: chases Pac directly
+    if(gi === 1){                                                          // Pinky: 4 tiles ahead of Pac
+      var t = { c:p.c + pac.dir.x*4, r:p.r + pac.dir.y*4 };
+      if(pac.dir.y === -1) t.c -= 4;                                       // the original up-facing overflow quirk
+      return t;
+    }
+    if(gi === 2){                                                          // Inky: the tile 2 ahead, doubled out from Blinky
+      var pv = { c:p.c + pac.dir.x*2, r:p.r + pac.dir.y*2 };
+      if(pac.dir.y === -1) pv.c -= 2;
+      var b = cellOf(ghosts[0]);
+      return { c: 2*pv.c - b.c, r: 2*pv.r - b.r };
+    }
+    var gc = cellOf(g);                                                    // Clyde: chases far, flees to his corner within 8 tiles
     var d2 = (gc.c-p.c)*(gc.c-p.c) + (gc.r-p.r)*(gc.r-p.r);
     return d2 > 64 ? { c:p.c, r:p.r } : g.scatter;
   }
@@ -409,11 +423,11 @@
 
   function loseLife(){
     lives--;
-    Snd.stop(); Snd.seq([72,67,60,53],0.13,'square',0.22);
+    Snd.stop(); bgmStop(); Snd.seq([72,67,60,53],0.13,'square',0.22);
     if(lives <= 0){ gameOver(); return; }
     state = 'dying'; dyingTimer = 0.9;
   }
-  function respawn(){ placeActors(); state = 'playing'; Snd.resume(); syncUI(); }
+  function respawn(){ placeActors(); state = 'playing'; Snd.resume(); bgmPlay(false); syncUI(); }
 
   function winLevel(){
     Snd.stop(); Snd.seq([72,76,79,84,88],0.09,'triangle',0.24);
@@ -431,7 +445,7 @@
   }
 
   function gameOver(){
-    state = 'over'; Snd.stop();
+    state = 'over'; Snd.stop(); bgmStop();
     if(score > best){ best = score; saveBest(best); }
     showOverlay('GAME OVER', 'Score ' + score + '  ·  reached maze ' + (levelIdx+1), 'Press Enter to play again');
     syncUI();
@@ -447,12 +461,12 @@
     ui.ov.classList.remove('hidden');
   }
   function hideOverlay(){ ui.ov.classList.add('hidden'); }
-  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent = Snd.isMuted() ? '\u{1F507}' : '\u{1F50A}'; }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent = Snd.isMuted() ? '\u{1F507}' : '\u{1F50A}'; if(BGM) BGM.muted = Snd.isMuted(); }
 
-  function startGame(){ reset(); hideOverlay(); state = 'playing'; Snd.start(); }
+  function startGame(){ reset(); hideOverlay(); state = 'playing'; Snd.start(); bgmPlay(true); }
   function togglePause(){
-    if(state === 'playing'){ state = 'paused'; Snd.stop(); showOverlay('PAUSED','Score ' + score,'Press P to resume'); }
-    else if(state === 'paused'){ state = 'playing'; hideOverlay(); Snd.resume(); }
+    if(state === 'playing'){ state = 'paused'; Snd.stop(); bgmStop(); showOverlay('PAUSED','Score ' + score,'Press P to resume'); }
+    else if(state === 'paused'){ state = 'playing'; hideOverlay(); Snd.resume(); bgmPlay(false); }
   }
 
   // ---- drawing ----
@@ -527,12 +541,11 @@
         if(state !== 'playing') break;
       }
       updateModes(dt);
-      Snd.music(150 + levelIdx*10);
       syncUI();
     } else if(state === 'dying'){
       dyingTimer -= dt; if(dyingTimer <= 0) respawn();
     } else if(state === 'ready-next'){
-      dyingTimer -= dt; if(dyingTimer <= 0){ hideOverlay(); state = 'playing'; Snd.start(); }
+      dyingTimer -= dt; if(dyingTimer <= 0){ hideOverlay(); state = 'playing'; Snd.start(); bgmPlay(false); }
     }
     draw();
     requestAnimationFrame(loop);

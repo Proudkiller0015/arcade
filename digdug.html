@@ -186,39 +186,53 @@
   function cellOf(e){ return { c:Math.round((e.px-12)/TILE), r:Math.round((e.py-12)/TILE) }; }
 
   function rint(a,b){ return a + Math.floor(Math.random()*(b-a+1)); }
-  // Randomised field each level: solid dirt with a few pre-dug tunnels, enemy
-  // pockets and rocks scattered in. More enemies (and faster) the deeper you go.
+  // Randomised field each level. A CONNECTED tunnel network is carved (player
+  // shaft + branching corridors) so the monsters reach you by roaming real
+  // tunnels - not by phasing through dirt. Enemies sit on that network; rocks
+  // sit in dirt with dirt beneath (so they only fall once you dig under them).
   function loadField(){
     grid=[]; rocks=[]; enemies=[]; flames=[]; harpoon=null;
-    var r,c;
+    var r,c,q;
     for(r=0;r<ROWS;r++){ grid[r]=[]; for(c=0;c<COLS;c++) grid[r][c] = (r<2)?0:1; }
     var pcx = rint(5,8);
     player={ px:cx(pcx), py:cyy(1), dir:{x:0,y:0}, face:{x:0,y:1}, frozen:false };
-    grid[2][pcx]=0;                                   // mouth of the player's shaft
-    // a few random starter tunnels so the field breathes
-    var segs = rint(2,4), s;
-    for(s=0;s<segs;s++){
-      if(Math.random()<0.6){ var rr2=rint(3,ROWS-2), c0=rint(1,COLS-6), len=rint(3,6); for(c=c0;c<Math.min(COLS-1,c0+len);c++) grid[rr2][c]=0; }
-      else { var cc2=rint(2,COLS-3), r0=rint(3,ROWS-5), h=rint(3,6); for(r=r0;r<Math.min(ROWS-1,r0+h);r++) grid[r][cc2]=0; }
+    function carve(cc,rr){ if(cc>=1 && cc<COLS-1 && rr>=2 && rr<ROWS) grid[rr][cc]=0; }
+    function carvedCells(){ var out=[]; for(var rr=2;rr<ROWS;rr++) for(var cc=1;cc<COLS-1;cc++) if(grid[rr][cc]===0) out.push({c:cc,r:rr}); return out; }
+    // player's vertical shaft from the surface
+    var depth=rint(6,10); for(r=2;r<=depth;r++) carve(pcx,r);
+    // branching corridors grown off the existing network (keeps it all connected)
+    var branches=rint(5,7), b;
+    for(b=0;b<branches;b++){
+      var cur=carvedCells(); if(!cur.length) break;
+      var st=cur[rint(0,cur.length-1)], cc=st.c, rr=st.r, steps=rint(4,8), horiz=Math.random()<0.5, s2;
+      for(s2=0;s2<steps;s2++){
+        if(horiz) cc += (Math.random()<0.5?-1:1); else rr += (Math.random()<0.5?-1:1);
+        cc=Math.max(1,Math.min(COLS-2,cc)); rr=Math.max(2,Math.min(ROWS-1,rr));
+        carve(cc,rr);
+        if(Math.random()<0.3) horiz=!horiz;
+      }
     }
-    // enemies in little pockets
+    var net=carvedCells();
+    // enemies placed on the network, away from the player's start
     var n=Math.min(7, 3+level), placed=0, tries=0;
-    while(placed<n && tries<300){ tries++;
-      var ec=rint(2,COLS-3), er=rint(4,ROWS-3);
-      if(er<4) continue;
-      grid[er][ec]=0; if(inB(ec+1,er))grid[er][ec+1]=0; if(inB(ec-1,er))grid[er][ec-1]=0;
+    while(placed<n && tries<500){ tries++;
+      if(!net.length) break;
+      var cell=net[rint(0,net.length-1)];
+      if(Math.abs(cell.c-pcx) + Math.abs(cell.r-2) < 4) continue;
+      var occ=false; for(q=0;q<enemies.length;q++){ var eq=cellOf(enemies[q]); if(eq.c===cell.c && eq.r===cell.r) occ=true; } if(occ) continue;
       var type = Math.random()<0.4?'fygar':'pooka';
-      enemies.push({ px:cx(ec), py:cyy(er), dir:{x:(Math.random()<0.5?-1:1),y:0}, type:type,
-        inflate:0, decay:0, stun:0, ghost:false, ghostT:0, ghostCD:5+Math.random()*6, fireT:3+Math.random()*3, fire:0, alive:true });
+      enemies.push({ px:cx(cell.c), py:cyy(cell.r), dir:{x:(Math.random()<0.5?-1:1),y:0}, type:type,
+        inflate:0, decay:0, stun:0, ghost:false, ghostT:0, ghostCD:14+Math.random()*12, fireT:3+Math.random()*3, fire:0, alive:true });
       placed++;
     }
-    // rocks sitting in dirt
+    // rocks: in dirt, with dirt directly below so they don't fall until you dig
     var nrk=Math.min(5, 2+Math.floor(level/2)), rp=0; tries=0;
-    while(rp<nrk && tries<300){ tries++;
-      var rc=rint(1,COLS-2), rr3=rint(3,ROWS-6);
-      if(grid[rr3][rc]!==1 || rockAt(rc,rr3)) continue;
-      var clash=false; for(var q=0;q<enemies.length;q++){ var eq=cellOf(enemies[q]); if(eq.c===rc && Math.abs(eq.r-rr3)<=1) clash=true; }
-      if(clash) continue;
+    while(rp<nrk && tries<500){ tries++;
+      var rc=rint(1,COLS-2), rr3=rint(3,ROWS-4);
+      if(grid[rr3][rc]!==1) continue;
+      if(rr3+1>=ROWS || grid[rr3+1][rc]!==1) continue;
+      if(rockAt(rc,rr3)) continue;
+      var clash=false; for(q=0;q<enemies.length;q++){ var e2=cellOf(enemies[q]); if(e2.c===rc && Math.abs(e2.r-rr3)<=1) clash=true; } if(clash) continue;
       rocks.push({ c:rc, r:rr3, falling:false, wob:0, py:cyy(rr3) }); rp++;
     }
   }
@@ -304,7 +318,7 @@
         e.px=cx(Math.max(1,Math.min(COLS-2,Math.round((e.px-12)/TILE))));
         e.py=cyy(Math.max(2,Math.min(ROWS-1,Math.round((e.py-12)/TILE))));
         var ec=cellOf(e); if(inB(ec.c,ec.r)) grid[ec.r][ec.c]=0;   // emerge
-        e.ghost=false; e.ghostCD=6+Math.random()*6; e.dir={x:0,y:0};
+        e.ghost=false; e.ghostCD=14+Math.random()*12; e.dir={x:0,y:0};
       }
       return;
     }
@@ -414,7 +428,13 @@
   }
   function drawEnemy(e){
     var x=e.px, y=e.py, s=9+e.inflate*2.6;
-    ctx.globalAlpha=e.ghost?0.5:1;
+    if(e.ghost){   // phasing through dirt: shown as just its floating eyes
+      ctx.globalAlpha=0.9;
+      ctx.fillStyle='#cfe8ff'; ctx.beginPath(); ctx.arc(x-4,y,3.6,0,7); ctx.arc(x+4,y,3.6,0,7); ctx.fill();
+      ctx.fillStyle=(e.type==='fygar')?'#2fbf5a':'#ff5b52'; ctx.beginPath(); ctx.arc(x-4,y,1.7,0,7); ctx.arc(x+4,y,1.7,0,7); ctx.fill();
+      ctx.globalAlpha=1; return;
+    }
+    ctx.globalAlpha=1;
     if(e.type==='fygar'){
       ctx.fillStyle='#2fbf5a'; ctx.beginPath(); ctx.arc(x,y,s,0,7); ctx.fill();
       var dir=e.dir.x||1;
