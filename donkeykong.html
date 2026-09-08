@@ -380,7 +380,11 @@
   showOverlay('DONKEY KONG','Climb the girders. Jump the barrels. Save her.','Press Enter to start');
   requestAnimationFrame(loop);
 
-  window.__dk = { girders:NG, ladders:LADDERS.length, hasAudio:!!Snd, barrels:function(){ return barrels.length; }, gy:gy };
+  window.__dk = { girders:NG, ladders:LADDERS.length, hasAudio:!!Snd, barrels:function(){ return barrels.length; }, gy:gy,
+    state:function(){ return state; }, score:function(){ return score; }, lives:function(){ return lives; },
+    ppos:function(){ return Math.round(p.x)+','+Math.round(p.y)+' g'+p.gi+(p.climbing?'c':''); },
+    key:function(k,v){ if(k in keys) keys[k]=v; }, jump2:function(){ jump(); },
+    sim:function(n){ for(var i=0;i<n && state==='playing';i++) step(1/60); } };
 })();
 </script>
 </body>

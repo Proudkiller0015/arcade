@@ -315,7 +315,10 @@
   showOverlay('GALAGA','They swarm, they dive. Shoot them down.','Press Enter to start');
   requestAnimationFrame(loop);
 
-  window.__galaga = { enemies:function(){ return enemies.length; }, alive:aliveCount, hasAudio:!!Snd };
+  window.__galaga = { enemies:function(){ return enemies.length; }, alive:aliveCount, hasAudio:!!Snd,
+    state:function(){ return state; }, score:function(){ return score; }, wave:function(){ return wave; }, lives:function(){ return lives; },
+    pxpos:function(){ return Math.round(player.x); }, key:function(k,v){ if(k==='left')left=v; else if(k==='right')right=v; else if(k==='fire')firing=v; },
+    sim:function(n){ for(var i=0;i<n && state==='playing';i++) step(1/60); } };
 })();
 </script>
 </body>

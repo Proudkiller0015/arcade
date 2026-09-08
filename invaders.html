@@ -397,7 +397,10 @@
   showOverlay('SPACE INVADERS','Hold the line. Clear the fleet.','Press Enter to start');
   requestAnimationFrame(loop);
 
-  window.__si = { invaders:function(){ return invaders.length; }, alive:function(){ return aliveList().length; }, shields:function(){ return shields.length; } };
+  window.__si = { invaders:function(){ return invaders.length; }, alive:function(){ return aliveList().length; }, shields:function(){ return shields.length; },
+    state:function(){ return state; }, score:function(){ return score; }, wave:function(){ return wave; }, lives:function(){ return lives; },
+    pxpos:function(){ return Math.round(player.x); }, key:function(k,v){ if(k==='left')left=v; else if(k==='right')right=v; else if(k==='fire')firing=v; },
+    sim:function(n){ for(var i=0;i<n && state==='playing';i++) step(1/60); } };
 })();
 </script>
 </body>
