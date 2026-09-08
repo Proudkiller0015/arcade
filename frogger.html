@@ -157,24 +157,28 @@
 
   function buildLanes(){
     lanes=[];
-    var carSpd=42 + level*10, logSpd=34 + level*7;
-    // river rows 1..5: logs (safe platforms)
+    // gentler base speed + slower ramp than before
+    var carSpd=34 + (level-1)*7, logSpd=30 + (level-1)*5;
+    // river rows 1..5: LONG logs with a modest water gap (always easy to land on one)
     for(var r=1;r<=5;r++){
       var dir=(r%2===0)?1:-1;
-      lanes.push({ row:r, type:'log', dir:dir, speed:logSpd*(0.8+Math.random()*0.5),
-        gap:TILE*(4+Math.floor(Math.random()*2)), len:TILE*(2+Math.floor(Math.random()*2)), off:Math.random()*WRAP });
+      var llen=TILE*(3+Math.floor(Math.random()*2));                    // 3-4 tiles long
+      lanes.push({ row:r, type:'log', dir:dir, speed:logSpd*(0.85+Math.random()*0.3),
+        len:llen, gap:llen + TILE*(2+Math.floor(Math.random()*2)), off:Math.random()*WRAP });  // + 2-3 tile water
     }
-    // road rows 7..11: cars (deadly)
+    // road rows 7..11: SHORT cars, and the gap is always the car length plus a clear
+    // 3-4 tile standing space, so no lane is ever wall-to-wall (that made it unfair before)
     for(r=7;r<=11;r++){
       dir=(r%2===0)?1:-1;
-      lanes.push({ row:r, type:'car', dir:dir, speed:carSpd*(0.8+Math.random()*0.6),
-        gap:TILE*(3+Math.floor(Math.random()*3)), len:TILE*(1+Math.floor(Math.random()*1)+1), off:Math.random()*WRAP });
+      var clen=TILE*(1+Math.floor(Math.random()*2));                    // 1-2 tiles long
+      lanes.push({ row:r, type:'car', dir:dir, speed:carSpd*(0.85+Math.random()*0.35),
+        len:clen, gap:clen + TILE*(3+Math.floor(Math.random()*2)), off:Math.random()*WRAP });  // + 3-4 tile gap
     }
   }
   function laneAt(row){ for(var i=0;i<lanes.length;i++) if(lanes[i].row===row) return lanes[i]; return null; }
 
   function resetFrog(){ frog={ col:6, row:12, px:6*TILE, py:12*TILE, onLog:null }; }
-  function newGame(){ score=0; lives=3; level=1; bays=[false,false,false,false,false]; buildLanes(); resetFrog(); syncUI(); }
+  function newGame(){ score=0; lives=4; level=1; bays=[false,false,false,false,false]; buildLanes(); resetFrog(); syncUI(); }
   function nextLevel(){ level++; bays=[false,false,false,false,false]; buildLanes(); resetFrog(); syncUI(); Snd.seq([72,76,79,84,88],0.09,'triangle',0.22); }
 
   function syncUI(){ ui.score.textContent=score; ui.best.textContent=best; ui.lives.textContent=lives; ui.level.textContent=level; }
