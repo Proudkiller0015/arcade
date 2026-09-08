@@ -127,7 +127,7 @@
       resume:function(){ if(!ok())return; on=true; nextTime=actx.currentTime+0.05; },
       stop:function(){ on=false; },
       music:function(bpm){ if(!on||!actx||!song)return; var spb=60/bpm;
-        while(nextTime < actx.currentTime+0.3){ var n=song[mIdx]; if(n[0]) t(mf(n[0]),nextTime,n[1]*spb*0.9,'square',0.11); mIdx=(mIdx+1)%song.length; nextTime+=n[1]*spb; } },
+        while(nextTime < actx.currentTime+0.3){ var n=song[mIdx]; if(n[0]){ t(mf(n[0]),nextTime,n[1]*spb*0.9,'square',0.18); t(mf(n[0]-24),nextTime,n[1]*spb*0.95,'triangle',0.14); } mIdx=(mIdx+1)%song.length; nextTime+=n[1]*spb; } },
       toggle:function(){ muted=!muted; if(master)master.gain.value=muted?0:0.85; try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){} return muted; },
       isMuted:function(){ return muted; },
       sfx:function(f,dur,type,vol,f2){ if(ok()) t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2); },

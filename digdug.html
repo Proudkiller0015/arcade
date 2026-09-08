@@ -185,17 +185,42 @@
   function aligned(e){ return ((e.px-12)%TILE===0)&&((e.py-12)%TILE===0); }
   function cellOf(e){ return { c:Math.round((e.px-12)/TILE), r:Math.round((e.py-12)/TILE) }; }
 
+  function rint(a,b){ return a + Math.floor(Math.random()*(b-a+1)); }
+  // Randomised field each level: solid dirt with a few pre-dug tunnels, enemy
+  // pockets and rocks scattered in. More enemies (and faster) the deeper you go.
   function loadField(){
     grid=[]; rocks=[]; enemies=[]; flames=[]; harpoon=null;
-    for(var r=0;r<ROWS;r++){ grid[r]=[]; for(var c=0;c<COLS;c++){
-      var ch=FIELD[r].charAt(c);
-      grid[r][c] = (ch==='X') ? 1 : 0;
-      if(ch==='P') player={ px:cx(c), py:cyy(r), dir:{x:0,y:0}, face:{x:0,y:1}, frozen:false };
-      if(ch==='R'){ rocks.push({ c:c, r:r, falling:false, wob:0, py:cyy(r) }); grid[r][c]=1; }
-      if(ch==='1'||ch==='2') enemies.push({ px:cx(c), py:cyy(r), dir:{x:-1,y:0}, type:(ch==='2'?'fygar':'pooka'),
-        inflate:0, decay:0, stun:0, ghost:false, ghostT:0, roamT:2+Math.random()*3, fireT:3+Math.random()*3, fire:0, flee:false, alive:true });
-    }}
-    if(!player) player={ px:cx(6), py:cyy(1), dir:{x:0,y:0}, face:{x:0,y:1}, frozen:false };
+    var r,c;
+    for(r=0;r<ROWS;r++){ grid[r]=[]; for(c=0;c<COLS;c++) grid[r][c] = (r<2)?0:1; }
+    var pcx = rint(5,8);
+    player={ px:cx(pcx), py:cyy(1), dir:{x:0,y:0}, face:{x:0,y:1}, frozen:false };
+    grid[2][pcx]=0;                                   // mouth of the player's shaft
+    // a few random starter tunnels so the field breathes
+    var segs = rint(2,4), s;
+    for(s=0;s<segs;s++){
+      if(Math.random()<0.6){ var rr2=rint(3,ROWS-2), c0=rint(1,COLS-6), len=rint(3,6); for(c=c0;c<Math.min(COLS-1,c0+len);c++) grid[rr2][c]=0; }
+      else { var cc2=rint(2,COLS-3), r0=rint(3,ROWS-5), h=rint(3,6); for(r=r0;r<Math.min(ROWS-1,r0+h);r++) grid[r][cc2]=0; }
+    }
+    // enemies in little pockets
+    var n=Math.min(7, 3+level), placed=0, tries=0;
+    while(placed<n && tries<300){ tries++;
+      var ec=rint(2,COLS-3), er=rint(4,ROWS-3);
+      if(er<4) continue;
+      grid[er][ec]=0; if(inB(ec+1,er))grid[er][ec+1]=0; if(inB(ec-1,er))grid[er][ec-1]=0;
+      var type = Math.random()<0.4?'fygar':'pooka';
+      enemies.push({ px:cx(ec), py:cyy(er), dir:{x:(Math.random()<0.5?-1:1),y:0}, type:type,
+        inflate:0, decay:0, stun:0, ghost:false, ghostT:0, ghostCD:5+Math.random()*6, fireT:3+Math.random()*3, fire:0, alive:true });
+      placed++;
+    }
+    // rocks sitting in dirt
+    var nrk=Math.min(5, 2+Math.floor(level/2)), rp=0; tries=0;
+    while(rp<nrk && tries<300){ tries++;
+      var rc=rint(1,COLS-2), rr3=rint(3,ROWS-6);
+      if(grid[rr3][rc]!==1 || rockAt(rc,rr3)) continue;
+      var clash=false; for(var q=0;q<enemies.length;q++){ var eq=cellOf(enemies[q]); if(eq.c===rc && Math.abs(eq.r-rr3)<=1) clash=true; }
+      if(clash) continue;
+      rocks.push({ c:rc, r:rr3, falling:false, wob:0, py:cyy(rr3) }); rp++;
+    }
   }
 
   function resetGame(){ score=0; lives=3; level=1; loadField(); levelT=0; syncUI(); }
@@ -263,59 +288,58 @@
   // ---- enemies ----
   function stepEnemy(e, dt){
     if(!e.alive) return;
-    if(e.stun>0){ e.stun-=dt; }
+    if(e.stun>0){ e.stun-=dt; return; }
     if(e.decay>0){ e.decay-=dt; if(e.decay<=0) e.inflate=0; }
-    if(e.inflate>0){ return; }        // being pumped: frozen
-    if(e.stun>0) return;
+    if(e.inflate>0) return;             // being pumped: frozen
 
     var pc=cellOf(player);
-    var target = e.flee ? {c:0,r:1} : pc;
 
     if(e.ghost){
-      var gx=cx(target.c)-e.px, gy2=cyy(target.r)-e.py;
-      if(Math.abs(gx)>Math.abs(gy2)) e.px += Math.sign(gx)*38*dt; else e.py += Math.sign(gy2)*38*dt;
+      // slow drift through dirt toward the player, then surface into a tunnel
+      var gx=cx(pc.c)-e.px, gy2=cyy(pc.r)-e.py;
+      if(Math.abs(gx)>Math.abs(gy2)) e.px += Math.sign(gx)*28*dt; else e.py += Math.sign(gy2)*28*dt;
+      e.px=Math.max(12,Math.min(BW-12,e.px)); e.py=Math.max(cyy(2),Math.min(cyy(ROWS-1),e.py));
       e.ghostT-=dt;
       if(e.ghostT<=0){
-        e.px=cx(Math.max(0,Math.min(COLS-1,Math.round((e.px-12)/TILE))));
-        e.py=cyy(Math.max(0,Math.min(ROWS-1,Math.round((e.py-12)/TILE))));
-        var ec=cellOf(e); if(inB(ec.c,ec.r)) grid[ec.r][ec.c]=0;
-        e.ghost=false; e.roamT=2.5+Math.random()*2.5; e.dir={x:0,y:0};
+        e.px=cx(Math.max(1,Math.min(COLS-2,Math.round((e.px-12)/TILE))));
+        e.py=cyy(Math.max(2,Math.min(ROWS-1,Math.round((e.py-12)/TILE))));
+        var ec=cellOf(e); if(inB(ec.c,ec.r)) grid[ec.r][ec.c]=0;   // emerge
+        e.ghost=false; e.ghostCD=6+Math.random()*6; e.dir={x:0,y:0};
       }
       return;
     }
+    e.ghostCD-=dt;
 
-    // Fygar fire-breath
+    // Fygar fire-breath (only along a clear tunnel row toward the player)
     if(e.type==='fygar'){
-      e.fireT-=dt;
       if(e.fire>0){ e.fire-=dt; }
-      else if(e.fireT<=0){
-        e.fireT=3.5+Math.random()*2.5;
-        var ec2=cellOf(e), pr=cellOf(player);
-        if(pr.r===ec2.r){ var dir=pr.c>ec2.c?1:-1, clear=true, dist=0;
-          for(var cc=ec2.c+dir; cc!==pr.c+dir && Math.abs(cc-ec2.c)<=4; cc+=dir){ if(!tunnel(cc,ec2.r)){ clear=false; break; } dist=Math.abs(cc-ec2.c); }
-          if(clear && dist>0){ e.dir={x:dir,y:0}; e.fire=0.9; flames.push({ r:ec2.r, x0:e.px, dir:dir, len:Math.min(3,dist), t:0.9 }); Snd.sfx(180,0.4,'sawtooth',0.18,90); }
+      else { e.fireT-=dt;
+        if(e.fireT<=0){
+          e.fireT=3.5+Math.random()*2.5;
+          var ec2=cellOf(e), pr=cellOf(player);
+          if(pr.r===ec2.r){ var fdir=pr.c>ec2.c?1:-1, clear=true, dist=0;
+            for(var fc=ec2.c+fdir; fc!==pr.c+fdir && Math.abs(fc-ec2.c)<=4; fc+=fdir){ if(!tunnel(fc,ec2.r)){ clear=false; break; } dist=Math.abs(fc-ec2.c); }
+            if(clear && dist>0){ e.dir={x:fdir,y:0}; e.fire=0.9; flames.push({ r:ec2.r, x0:e.px, dir:fdir, len:Math.min(3,dist), t:0.9 }); Snd.sfx(180,0.4,'sawtooth',0.18,90); }
+          }
         }
       }
-      if(e.fire>0) return;   // stand still while breathing
+      if(e.fire>0) return;   // hold still while breathing
     }
 
-    e.roamT-=dt;
     if(aligned(e)){
       var cell=cellOf(e), names=[[1,0],[-1,0],[0,1],[0,-1]], opts=[];
       for(var k=0;k<names.length;k++){ var dx=names[k][0],dy=names[k][1];
         if(dx===-e.dir.x && dy===-e.dir.y && opts.length) continue;
         if(tunnel(cell.c+dx,cell.r+dy)) opts.push({x:dx,y:dy});
       }
-      if(!opts.length || (e.roamT<=0 && !e.flee)){ e.ghost=true; e.ghostT=1.4+Math.random(); return; }
-      if(e.flee && !opts.length){ e.ghost=true; e.ghostT=2; return; }
+      // Ghost only when genuinely boxed in, or once in a long while as a shortcut.
+      if(!opts.length || e.ghostCD<=0){ e.ghost=true; e.ghostT=1.0+Math.random()*0.6; return; }
       var bestD=1e9, bd=opts[0];
-      for(k=0;k<opts.length;k++){ var nc=cell.c+opts[k].x, nr=cell.r+opts[k].y; var dd=(nc-target.c)*(nc-target.c)+(nr-target.r)*(nr-target.r); if(dd<bestD){ bestD=dd; bd=opts[k]; } }
+      for(k=0;k<opts.length;k++){ var nc=cell.c+opts[k].x, nr=cell.r+opts[k].y; var dd=(nc-pc.c)*(nc-pc.c)+(nr-pc.r)*(nr-pc.r); if(dd<bestD){ bestD=dd; bd=opts[k]; } }
       e.dir=bd;
     }
-    var spd=1.4+level*0.14 + (e.flee?0.8:0);
+    var spd=1.4+level*0.16;
     e.px+=e.dir.x*spd; e.py+=e.dir.y*spd;
-    // escaped to the surface
-    if(e.flee && cellOf(e).r<=1){ e.alive=false; checkClear(); }
   }
 
   function updateFlames(dt){
@@ -355,11 +379,28 @@
   function gameOver(){ state='over'; Snd.stop(); if(score>best){ best=score; saveBest(best); } showOverlay('GAME OVER','Score '+score+'  ·  level '+level,'Press Enter to play again'); syncUI(); }
 
   // ---- draw ----
+  function rr(x,y,w,h,rad){ ctx.beginPath(); if(ctx.roundRect){ ctx.roundRect(x,y,w,h,rad); } else { ctx.moveTo(x+rad,y); ctx.arcTo(x+w,y,x+w,y+h,rad); ctx.arcTo(x+w,y+h,x,y+h,rad); ctx.arcTo(x,y+h,x,y,rad); ctx.arcTo(x,y,x+w,y,rad); ctx.closePath(); } }
   function draw(){
-    for(var r=0;r<ROWS;r++) for(var c=0;c<COLS;c++){
-      if(grid[r][c]===1){ ctx.fillStyle = r<2?'#12203a':STRATA[Math.min(STRATA.length-1,Math.floor((r-2)/3))]; ctx.fillRect(c*TILE,r*TILE,TILE,TILE); }
-      else { ctx.fillStyle = r<2?'#0c1730':'#08080f'; ctx.fillRect(c*TILE,r*TILE,TILE,TILE); }
+    var r,c;
+    // sky band
+    ctx.fillStyle='#0c1730'; ctx.fillRect(0,0,BW,TILE*2);
+    // solid dirt strata with a little grain
+    for(r=2;r<ROWS;r++){
+      ctx.fillStyle=STRATA[Math.min(STRATA.length-1,Math.floor((r-2)/3))]; ctx.fillRect(0,r*TILE,BW,TILE);
+      ctx.fillStyle='rgba(0,0,0,0.12)';
+      for(c=0;c<COLS;c++){ if(((r*7+c*5)%4)===0) ctx.fillRect(c*TILE+(r%2?7:15), r*TILE+9, 3,3); if(((r*3+c*7)%5)===0) ctx.fillRect(c*TILE+(c%2?4:18), r*TILE+16, 2,2); }
     }
+    // carve rounded tunnels: rounded holes per tunnel cell, bridged to neighbours
+    ctx.fillStyle='#050509';
+    for(r=2;r<ROWS;r++) for(c=0;c<COLS;c++){ if(grid[r][c]!==0) continue;
+      var x=c*TILE, y=r*TILE;
+      rr(x+2,y+2,TILE-4,TILE-4,8); ctx.fill();
+      if(c+1<COLS && grid[r][c+1]===0) ctx.fillRect(x+TILE-9, y+3, 14, TILE-6);
+      if(r+1<ROWS && grid[r+1][c]===0) ctx.fillRect(x+3, y+TILE-9, TILE-6, 14);
+    }
+    // the digger carves smoothly as he moves (tunnel follows his exact position)
+    if(player){ ctx.fillStyle='#050509'; rr(player.px-11, player.py-11, 22, 22, 9); ctx.fill();
+      var pf=player.face; if(pf.x||pf.y){ rr(player.px-9+pf.x*10, player.py-9+pf.y*10, 18, 18, 8); ctx.fill(); } }
     for(var i=0;i<rocks.length;i++){ var k=rocks[i]; var rx=cx(k.c), ry=k.falling?k.py:cyy(k.r);
       ctx.fillStyle='#9a9aa8'; ctx.beginPath(); ctx.arc(rx,ry,9,0,7); ctx.fill(); ctx.fillStyle='#c8c8d4'; ctx.beginPath(); ctx.arc(rx-3,ry-3,3,0,7); ctx.fill(); ctx.fillStyle='#6a6a78'; ctx.beginPath(); ctx.arc(rx+3,ry+3,3,0,7); ctx.fill(); }
     // flames
@@ -405,7 +446,6 @@
     var dt=last?Math.min((t-last)/1000,0.05):0; last=t;
     if(state==='playing'){
       levelT+=dt;
-      if(levelT>32){ for(var f=0;f<enemies.length;f++) enemies[f].flee=true; }
       stepPlayer(); updateHarpoon(dt);
       for(var i=0;i<enemies.length;i++) stepEnemy(enemies[i],dt);
       updateFlames(dt); if(state!=='playing'){ draw(); requestAnimationFrame(loop); return; }

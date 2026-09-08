@@ -145,8 +145,9 @@
       waka:function(){ if(!ok())return; wak^=1; t(wak?360:260, actx.currentTime, 0.06,'square',0.16, wak?260:360); }
     };
   })('pacman.muted');
-  Snd.setSong([[69,.5],[72,.5],[76,.5],[72,.5],[74,.5],[71,.5],[67,.5],[71,.5],
-               [69,.5],[72,.5],[76,.5],[79,.5],[77,.5],[74,.5],[72,.5],[76,.5]]);
+  // Not the (copyrighted) arcade jingle - this is the in-game "siren" wobble,
+  // which speeds up with the level. The waka on eating dots does the rest.
+  Snd.setSong([[55,.16],[60,.16],[64,.16],[60,.16]]);
 
   var COLS = 19, ROWS = 22, TILE = 24;
   var BW = COLS*TILE, BH = ROWS*TILE;
@@ -181,6 +182,7 @@
 
   function band(f){ return f ? '###' : '...'; }
   function prow(f){ return '#.' + band(f[0]) + '.' + band(f[1]) + '.' + band(f[2]) + '.' + band(f[3]) + '.#'; }
+  function setCell(rows, r, c, ch){ rows[r] = rows[r].substring(0,c) + ch + rows[r].substring(c+1); }
   function buildMaze(idx){
     var p = LAYOUTS[idx], rows = [], i;
     rows.push('###################');
@@ -191,6 +193,13 @@
     for(i=8;i<16;i++) rows.push(prow(p[i]));
     rows.push('#o...............o#');
     rows.push('###################');
+    // Central ghost house: a walled pen (rows 9-12, cols 7-11) with a door at
+    // the top-centre. '=' is the door (passable, drawn as a gate); ' ' interior
+    // (no pellet); '#' the walls. Ghosts start inside and leave through the door.
+    setCell(rows,9,7,'#'); setCell(rows,9,8,'#'); setCell(rows,9,9,'='); setCell(rows,9,10,'#'); setCell(rows,9,11,'#');
+    setCell(rows,10,7,'#'); setCell(rows,10,8,' '); setCell(rows,10,9,' '); setCell(rows,10,10,' '); setCell(rows,10,11,'#');
+    setCell(rows,11,7,'#'); setCell(rows,11,8,' '); setCell(rows,11,9,' '); setCell(rows,11,10,' '); setCell(rows,11,11,'#');
+    setCell(rows,12,7,'#'); setCell(rows,12,8,'#'); setCell(rows,12,9,'#'); setCell(rows,12,10,'#'); setCell(rows,12,11,'#');
     return rows;
   }
 
@@ -454,6 +463,9 @@
           rr(ctx, c*TILE+3, r*TILE+3, TILE-6, TILE-6, 6); ctx.fill();
           ctx.fillStyle = cfg.w2;
           rr(ctx, c*TILE+5, r*TILE+5, TILE-10, TILE-10, 4); ctx.fill();
+        } else if(maze[r].charAt(c) === '='){
+          ctx.fillStyle = '#ff9bd0';
+          ctx.fillRect(c*TILE+2, r*TILE + TILE/2 - 2, TILE-4, 4);   // ghost-house gate
         }
         var d = dots[r][c];
         if(d === 1){ ctx.fillStyle=cfg.dot; ctx.beginPath(); ctx.arc(cx(c),cyy(r),2.4,0,7); ctx.fill(); }
