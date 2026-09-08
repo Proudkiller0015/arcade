@@ -352,8 +352,11 @@
       for(k=0;k<opts.length;k++){ var nc=cell.c+opts[k].x, nr=cell.r+opts[k].y; var dd=(nc-pc.c)*(nc-pc.c)+(nr-pc.r)*(nr-pc.r); if(dd<bestD){ bestD=dd; bd=opts[k]; } }
       e.dir=bd;
     }
-    var spd=1.4+level*0.16;
-    e.px+=e.dir.x*spd; e.py+=e.dir.y*spd;
+    // integer 3px/step keeps enemies grid-aligned (so they re-path & collide right);
+    // a per-enemy skip sets the pace, easing up as levels rise.
+    e.mtick = (e.mtick || 0) + 1;
+    var eskip = Math.min(9, 3 + level);
+    if(e.mtick % eskip !== 0){ e.px += e.dir.x*3; e.py += e.dir.y*3; }
   }
 
   function updateFlames(dt){
@@ -462,12 +465,19 @@
 
   // ---- loop ----
   var last=0;
+  var STEP=1/60, acc=0;
   function loop(t){
-    var dt=last?Math.min((t-last)/1000,0.05):0; last=t;
+    var dt=last?Math.min((t-last)/1000,0.1):0; last=t;
     if(state==='playing'){
       levelT+=dt;
-      stepPlayer(); updateHarpoon(dt);
-      for(var i=0;i<enemies.length;i++) stepEnemy(enemies[i],dt);
+      acc+=dt;
+      // fixed-step grid movement -> same speed on 30/60/120Hz, and stays aligned
+      while(acc>=STEP){ acc-=STEP;
+        stepPlayer();
+        for(var i=0;i<enemies.length;i++) stepEnemy(enemies[i], STEP);
+        if(state!=='playing') break;
+      }
+      updateHarpoon(dt);
       updateFlames(dt); if(state!=='playing'){ draw(); requestAnimationFrame(loop); return; }
       stepRocks(dt); if(state!=='playing'){ draw(); requestAnimationFrame(loop); return; }
       contact();
