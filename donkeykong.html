@@ -12,7 +12,7 @@
     color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
   .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px}
   .stage{position:relative; line-height:0}
-  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#05060a; }
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#000; }
   .panel{display:flex; flex-direction:column; gap:12px; width:170px}
   .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
   .row2{display:flex; gap:12px}
@@ -55,7 +55,7 @@
     .panel .stat{ flex:1 1 66px; min-width:66px; text-align:center; padding:6px 8px; }
     .keys{ display:none; }
     .credit{ flex:1 1 100%; order:5; margin-top:2px; text-align:center; }
-    canvas#board{ height:60vh !important; width:auto !important; max-width:94vw; }
+    canvas#board{ height:62vh !important; width:auto !important; max-width:94vw; }
   }
 </style>
 </head>
@@ -68,7 +68,7 @@
     <div id="overlay" class="overlay">
       <div>
         <h2 id="ovTitle">DONKEY KONG</h2>
-        <p id="ovSub">Climb to the top. Jump the barrels.</p>
+        <p id="ovSub">Climb the girders. Jump the barrels. Save her.</p>
         <p class="big" id="ovHint">Press Enter to start</p>
       </div>
     </div>
@@ -77,20 +77,20 @@
     <div class="stat"><span class="label">Score</span><span class="value" id="uiScore">0</span></div>
     <div class="stat"><span class="label">Best</span><span class="value" id="uiBest">0</span></div>
     <div class="row2">
-      <div class="stat"><span class="label">Stage</span><span class="value" id="uiLevel">1</span></div>
+      <div class="stat"><span class="label">Bonus</span><span class="value" id="uiBonus">5000</span></div>
       <div class="stat"><span class="label">Lives</span><span class="value" id="uiLives">3</span></div>
     </div>
     <div class="keys">
       <b>&larr;</b><b>&rarr;</b> run &nbsp; <b>&uarr;</b><b>&darr;</b> climb<br>
-      <b>Space</b> jump<br>
+      <b>Space</b> jump (grab a hammer to smash)<br>
       <b>P</b> pause &nbsp; <b>Enter</b> restart
     </div>
     <div class="credit">
       <span class="sig">&#128081; by Slime Queen</span>
       An arcade toy for the Velvet Bunny Cabaret.
       <span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is
-      recorded anywhere. A fan-made tribute; not affiliated with, or endorsed by, Nintendo or
-      Bondage Club. Provided as-is, for fun.</span>
+      recorded anywhere. A fan-made tribute with all-original art; not affiliated with, or endorsed by,
+      Nintendo or Bondage Club. Provided as-is, for fun.</span>
     </div>
   </aside>
 
@@ -136,35 +136,47 @@
       seq:function(notes,step,type,vol){ if(!ok())return; var c=actx.currentTime; for(var i=0;i<notes.length;i++){ t(mf(notes[i]),c+i*step,step*0.9,type||'square',vol||0.2); } }
     };
   })('dk.muted');
-  Snd.setSong([[48,.5],[55,.5],[60,.5],[55,.5],[53,.5],[60,.5],[52,.5],[59,.5],
-               [48,.5],[55,.5],[60,.5],[64,.5],[62,.5],[59,.5],[55,.5],[52,.5]]);
+  Snd.setSong([[52,.5],[59,.5],[64,.5],[59,.5],[57,.5],[64,.5],[55,.5],[62,.5],
+               [52,.5],[59,.5],[64,.5],[67,.5],[65,.5],[62,.5],[59,.5],[55,.5]]);
 
-  var BW = 360, BH = 520;
-  var F = [478, 402, 326, 250, 174, 96];            // floor top-y, index 0 = bottom, 5 = top
-  var NFLOOR = F.length, BEAM = 8, WALLPAD = 8;
-  var LADDERS = [ {x:306,lo:0,hi:1}, {x:64,lo:1,hi:2}, {x:306,lo:2,hi:3}, {x:64,lo:3,hi:4}, {x:186,lo:4,hi:5} ];
+  var BW=360, BH=540, WALL=14;
+  // Girders: yl (left-edge y) and yr (right-edge y); the difference is the slope
+  // so barrels roll downhill and zig-zag. Index 0 = bottom, 4 = top slanted girder.
+  var GIR = [
+    { yl:498, yr:516 }, // 0 bottom, down-right
+    { yl:432, yr:414 }, // 1 down-left
+    { yl:342, yr:360 }, // 2 down-right
+    { yl:270, yr:252 }, // 3 down-left
+    { yl:176, yr:194 }  // 4 top, down-right
+  ];
+  var NG = GIR.length;
+  // ladders: connect girder lo (lower) to hi (higher) at x
+  var LADDERS = [ {x:300,lo:0,hi:1}, {x:66,lo:1,hi:2}, {x:300,lo:2,hi:3}, {x:66,lo:3,hi:4} ];
+  var HAMMER = { x:250, gi:2, taken:false };            // one hammer power-up
+
+  function gy(gi,x){ var g=GIR[gi]; var tX=(x-WALL)/(BW-2*WALL); if(tX<0)tX=0; if(tX>1)tX=1; return g.yl + (g.yr-g.yl)*tX; }
+  function downhill(gi){ return GIR[gi].yr > GIR[gi].yl ? 1 : -1; }
 
   function fit(cv,w,h){ var d=window.devicePixelRatio||1; cv.width=Math.round(w*d); cv.height=Math.round(h*d);
     cv.style.width=w+'px'; cv.style.height=h+'px'; var c=cv.getContext('2d'); c.setTransform(d,0,0,d,0,0); return c; }
   var ctx = fit(document.getElementById('board'), BW, BH);
 
   var ui = { score:document.getElementById('uiScore'), best:document.getElementById('uiBest'),
-    level:document.getElementById('uiLevel'), lives:document.getElementById('uiLives'),
+    bonus:document.getElementById('uiBonus'), lives:document.getElementById('uiLives'),
     ov:document.getElementById('overlay'), ovT:document.getElementById('ovTitle'), ovS:document.getElementById('ovSub'), ovH:document.getElementById('ovHint') };
 
   function loadBest(){ try { return parseInt(localStorage.getItem('dk.best'),10)||0; } catch(e){ return 0; } }
   function saveBest(v){ try { localStorage.setItem('dk.best', String(v)); } catch(e){} }
 
-  var p, barrels, score, lives, level, best = loadBest();
-  var spawnT, animT, dyingT;
-  var state = 'ready';
-  var keys = { left:false, right:false, up:false, down:false };
+  var p, barrels, score, lives, level, best=loadBest();
+  var spawnT, animT, dyingT, bonus, hammerTimer, kongThrow;
+  var state='ready', keys={left:false,right:false,up:false,down:false};
 
-  function newPlayer(){ return { x:40, y:F[0], vy:0, floor:0, onGround:true, climbing:null, baseY:F[0], face:1, walk:0 }; }
+  function newPlayer(){ return { x:44, gi:0, y:gy(0,44), vy:0, air:false, climbing:null, face:1, walk:0, hammer:0 }; }
   function resetGame(){ score=0; lives=3; level=1; startStage(); syncUI(); }
-  function startStage(){ p=newPlayer(); barrels=[]; spawnT=1.0; animT=0; }
+  function startStage(){ p=newPlayer(); barrels=[]; spawnT=1.4; animT=0; bonus=5000; HAMMER.taken=false; hammerTimer=0; kongThrow=0; }
 
-  function syncUI(){ ui.score.textContent=score; ui.best.textContent=best; ui.level.textContent=level; ui.lives.textContent=lives; }
+  function syncUI(){ ui.score.textContent=score; ui.best.textContent=best; ui.bonus.textContent=Math.max(0,Math.floor(bonus/100)*100); ui.lives.textContent=lives; }
   function showOverlay(t,s,h){ if(document.body.classList.contains('touch')){ h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again').replace('Press P to resume','Tap to resume'); }
     ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
   function hideOverlay(){ ui.ov.classList.add('hidden'); }
@@ -172,117 +184,152 @@
   function startGame(){ resetGame(); hideOverlay(); state='playing'; Snd.start(); }
   function togglePause(){ if(state==='playing'){ state='paused'; Snd.stop(); showOverlay('PAUSED','Score '+score,'Press P to resume'); } else if(state==='paused'){ state='playing'; hideOverlay(); Snd.resume(); } }
 
-  var GRAV = 1500, RUN = 116, CLIMB = 92, JUMP_V = 440;
+  var GRAV=1500, RUN=104, CLIMB=86, JUMP_V=430;
 
-  function ladderAt(x, floor, needHi, needLo){
+  function ladderAt(x, gi, wantUp){
     for(var i=0;i<LADDERS.length;i++){ var L=LADDERS[i];
-      if(Math.abs(x - L.x) < 12){
-        if(needHi && L.lo === floor) return L;
-        if(needLo && L.hi === floor) return L;
-      }
+      if(Math.abs(x-L.x)<12){ if(wantUp && L.lo===gi) return L; if(!wantUp && L.hi===gi) return L; }
     }
     return null;
   }
 
   function step(dt){
-    animT += dt;
-    // ---- player ----
+    animT+=dt; bonus-=dt*120; if(bonus<=0){ bonus=0; loseLife(); return; }
+    kongThrow += dt;
+
     if(p.climbing){
-      var L = p.climbing;
-      if(keys.up) p.y -= CLIMB*dt;
-      else if(keys.down) p.y += CLIMB*dt;
+      var L=p.climbing;
+      if(keys.up) p.y -= CLIMB*dt; else if(keys.down) p.y += CLIMB*dt;
       p.x = L.x;
-      if(p.y <= F[L.hi]){ p.y = F[L.hi]; p.floor = L.hi; p.climbing = null; p.onGround = true; p.baseY = p.y; p.vy=0; }
-      else if(p.y >= F[L.lo]){ p.y = F[L.lo]; p.floor = L.lo; p.climbing = null; p.onGround = true; p.baseY = p.y; p.vy=0; }
+      var topY=gy(L.hi,L.x), botY=gy(L.lo,L.x);
+      if(p.y <= topY){ p.y=topY; p.gi=L.hi; p.climbing=null; p.air=false; p.vy=0; }
+      else if(p.y >= botY){ p.y=botY; p.gi=L.lo; p.climbing=null; p.air=false; p.vy=0; }
     } else {
-      // horizontal
-      var mv = (keys.right?1:0) - (keys.left?1:0);
-      if(mv){ p.x += mv*RUN*dt; p.face = mv; p.walk += dt*8; }
-      p.x = Math.max(WALLPAD+7, Math.min(BW-WALLPAD-7, p.x));
-      // start climb?
-      if(p.onGround && keys.up){ var lu = ladderAt(p.x, p.floor, true, false); if(lu){ p.climbing=lu; p.onGround=false; } }
-      if(p.onGround && keys.down){ var ld = ladderAt(p.x, p.floor, false, true); if(ld){ p.climbing=ld; p.onGround=false; p.y+=2; } }
-      // gravity / jump
-      if(!p.onGround){
+      var mv=(keys.right?1:0)-(keys.left?1:0);
+      if(mv && !p.air){ p.x += mv*RUN*dt; p.face=mv; p.walk+=dt*8; }
+      else if(mv && p.air){ p.x += mv*RUN*0.7*dt; }
+      p.x=Math.max(WALL+7, Math.min(BW-WALL-7, p.x));
+      if(!p.air){
+        p.y = gy(p.gi, p.x);
+        if(keys.up){ var lu=ladderAt(p.x,p.gi,true); if(lu){ p.climbing=lu; } }
+        else if(keys.down){ var ld=ladderAt(p.x,p.gi,false); if(ld){ p.climbing=ld; p.y+=2; } }
+      } else {
         p.vy += GRAV*dt; p.y += p.vy*dt;
-        if(p.vy > 0 && p.y >= p.baseY){ p.y = p.baseY; p.vy = 0; p.onGround = true; }
+        var ground=gy(p.gi,p.x);
+        if(p.vy>0 && p.y>=ground){ p.y=ground; p.vy=0; p.air=false; }
       }
     }
-    // reached the top?
-    if(p.floor === NFLOOR-1 && !p.climbing){ winStage(); return; }
 
-    // ---- barrels ----
-    spawnT -= dt;
-    if(spawnT <= 0){ spawnT = Math.max(1.1, 2.4 - level*0.15); barrels.push({ x:60, y:F[NFLOOR-1], fl:NFLOOR-1, dir:1, jumped:false }); Snd.sfx(120,0.12,'square',0.18,60); }
-    var bspeed = 84 + level*8;
+    // hammer pickup
+    if(!HAMMER.taken && p.hammer<=0 && p.gi===HAMMER.gi && Math.abs(p.x-HAMMER.x)<14 && !p.climbing){ HAMMER.taken=true; p.hammer=8; Snd.seq([72,76,79],0.07,'square',0.2); }
+    if(p.hammer>0) p.hammer-=dt;
+
+    if(p.gi===NG-1 && !p.climbing && p.x < 96){ winStage(); return; }   // reached Pauline
+
+    // spawn barrels from Kong
+    spawnT-=dt;
+    if(spawnT<=0){ spawnT=Math.max(1.0, 2.3-level*0.15); barrels.push({ x:70, gi:NG-1, y:gy(NG-1,70)-8, dir:downhill(NG-1), onLadder:false, jumped:false, spin:0 }); Snd.sfx(120,0.14,'square',0.18,55); kongThrow=0; }
+
+    var bspeed=78+level*8;
     for(var i=barrels.length-1;i>=0;i--){
-      var b = barrels[i];
-      b.x += b.dir * bspeed * dt;
-      if(b.x > BW-WALLPAD-6){ b.x = BW-WALLPAD-6; if(b.fl>0){ b.fl--; b.y=F[b.fl]; b.dir=-1; b.jumped=false; } else { barrels.splice(i,1); continue; } }
-      else if(b.x < WALLPAD+6){ b.x = WALLPAD+6; if(b.fl>0){ b.fl--; b.y=F[b.fl]; b.dir=1; b.jumped=false; } else { barrels.splice(i,1); continue; } }
-      // collision vs player (same floor)
-      if(Math.abs(b.y - p.baseY) < 3 && Math.abs(b.x - p.x) < 14){
-        if(!p.climbing && p.y < b.y - 12){ if(!b.jumped){ b.jumped=true; score+=100; Snd.sfx(880,0.08,'square',0.16,1300); } }
+      var b=barrels[i];
+      if(b.onLadder){
+        b.y += 90*dt; var below=gy(b.gi-1, b.x);
+        if(b.y >= below-8){ b.gi--; b.y=gy(b.gi,b.x)-8; b.onLadder=false; b.dir=downhill(b.gi); }
+      } else {
+        b.x += b.dir*bspeed*dt; b.spin += b.dir*dt*6;
+        b.y = gy(b.gi, b.x)-8;
+        // maybe roll down a ladder
+        for(var l=0;l<LADDERS.length;l++){ var L2=LADDERS[l]; if(L2.hi===b.gi && Math.abs(b.x-L2.x)<5 && Math.random()<0.35){ b.onLadder=true; break; } }
+        if(b.x > BW-WALL-6){ b.x=BW-WALL-6; if(b.gi>0){ b.gi--; b.y=gy(b.gi,b.x)-8; b.dir=downhill(b.gi); b.jumped=false; } else { barrels.splice(i,1); continue; } }
+        else if(b.x < WALL+6){ b.x=WALL+6; if(b.gi>0){ b.gi--; b.y=gy(b.gi,b.x)-8; b.dir=downhill(b.gi); b.jumped=false; } else { barrels.splice(i,1); continue; } }
+      }
+      // hammer smash
+      if(p.hammer>0 && Math.abs(b.x-p.x)<20 && Math.abs((b.y+8)-p.y)<22){ barrels.splice(i,1); score+=300; Snd.sfx(300,0.12,'square',0.2,90); continue; }
+      // collision / jump-over
+      if(p.gi===b.gi && Math.abs(b.x-p.x)<13){
+        var ground2=gy(p.gi,p.x);
+        if(!p.climbing && (ground2 - p.y) > 12){ if(!b.jumped){ b.jumped=true; score+=100; Snd.sfx(880,0.08,'square',0.16,1300); } }
         else if(!p.climbing){ loseLife(); return; }
       }
     }
     syncUI();
   }
 
-  function jump(){ if(state==='playing' && p.onGround && !p.climbing){ p.vy = -JUMP_V; p.onGround=false; Snd.sfx(300,0.16,'square',0.18,620); } }
+  function jump(){ if(state==='playing' && !p.air && !p.climbing){ p.vy=-JUMP_V; p.air=true; Snd.sfx(320,0.16,'square',0.18,640); } }
   function loseLife(){ lives--; Snd.stop(); Snd.seq([64,59,52,45],0.13,'square',0.22); if(lives<=0){ gameOver(); return; } state='dying'; dyingT=0.9; }
-  function respawn(){ p=newPlayer(); barrels=[]; spawnT=1.2; state='playing'; Snd.resume(); }
-  function winStage(){ score += 300 + level*100; level++; Snd.stop(); Snd.seq([60,64,67,72,76],0.1,'triangle',0.24); state='win'; dyingT=1.2; showOverlay('STAGE CLEAR','You saved her! Score '+score,''); }
+  function respawn(){ p=newPlayer(); barrels=[]; spawnT=1.4; bonus=Math.max(2000,bonus); state='playing'; Snd.resume(); }
+  function winStage(){ score += 300 + Math.floor(bonus/100)*100; level++; Snd.stop(); Snd.seq([60,64,67,72,76,79],0.1,'triangle',0.24); state='win'; dyingT=1.4; showOverlay('SHE IS SAFE!','Stage '+level+' next. Score '+score,''); }
   function gameOver(){ state='over'; Snd.stop(); if(score>best){ best=score; saveBest(best); } showOverlay('GAME OVER','Score '+score+'  ·  stage '+level,'Press Enter to play again'); syncUI(); }
 
   // ---- draw ----
-  function draw(){
-    ctx.fillStyle='#07070d'; ctx.fillRect(0,0,BW,BH);
-    // girders
-    for(var f=0; f<NFLOOR; f++){
-      ctx.fillStyle = '#e2434f';
-      ctx.fillRect(WALLPAD, F[f], BW-WALLPAD*2, BEAM);
-      ctx.fillStyle = '#7a1420';
-      for(var x=WALLPAD; x<BW-WALLPAD; x+=12) ctx.fillRect(x, F[f], 2, BEAM);
-    }
-    // ladders
-    ctx.strokeStyle='#66e0ff'; ctx.lineWidth=2;
-    for(var i=0;i<LADDERS.length;i++){ var L=LADDERS[i], y0=F[L.hi], y1=F[L.lo]+BEAM;
-      ctx.beginPath(); ctx.moveTo(L.x-6,y0); ctx.lineTo(L.x-6,y1); ctx.moveTo(L.x+6,y0); ctx.lineTo(L.x+6,y1);
-      for(var yy=y0; yy<y1; yy+=10){ ctx.moveTo(L.x-6,yy); ctx.lineTo(L.x+6,yy); } ctx.stroke();
-    }
-    // kong + princess
-    ctx.fillStyle='#8a5a2a'; ctx.fillRect(26, F[NFLOOR-1]-34, 42, 32);
-    ctx.fillStyle='#c98a4a'; ctx.fillRect(34, F[NFLOOR-1]-26, 26, 16);
-    ctx.fillStyle='#fff'; ctx.fillRect(38,F[NFLOOR-1]-22,4,4); ctx.fillRect(50,F[NFLOOR-1]-22,4,4);
-    ctx.fillStyle='#ff7bd0'; ctx.fillRect(210, F[NFLOOR-1]-26, 12, 24); ctx.fillStyle='#ffd7a8'; ctx.fillRect(211, F[NFLOOR-1]-30, 10, 6);
-    // barrels
-    for(i=0;i<barrels.length;i++){ var b=barrels[i];
-      ctx.fillStyle='#d98a30'; ctx.beginPath(); ctx.arc(b.x, b.y-7, 7, 0, 7); ctx.fill();
-      ctx.strokeStyle='#5a3410'; ctx.lineWidth=1.5; ctx.beginPath(); ctx.arc(b.x,b.y-7,7,0,7); ctx.moveTo(b.x-7,b.y-9); ctx.lineTo(b.x+7,b.y-9); ctx.moveTo(b.x-7,b.y-5); ctx.lineTo(b.x+7,b.y-5); ctx.stroke();
-    }
-    // player
-    drawPlayer();
+  function drawGirder(gi){
+    var x0=WALL, x1=BW-WALL, y0=gy(gi,x0), y1=gy(gi,x1);
+    ctx.strokeStyle='#ff5b52'; ctx.lineWidth=8; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+    ctx.strokeStyle='#7a1420'; ctx.lineWidth=2;
+    for(var x=x0+6;x<x1;x+=14){ var y=gy(gi,x); ctx.beginPath(); ctx.moveTo(x,y-3); ctx.lineTo(x,y+3); ctx.stroke(); }
+    ctx.lineWidth=1;
   }
-  function drawPlayer(){
-    var x=p.x, y=p.y;
-    ctx.fillStyle='#ff5b52'; ctx.fillRect(x-6, y-20, 12, 10);       // torso/cap
-    ctx.fillStyle='#3a6bd6'; ctx.fillRect(x-6, y-11, 12, 11);       // overalls
-    ctx.fillStyle='#ffd7a8'; ctx.fillRect(x-5, y-16, 10, 5);        // face band
-    ctx.fillStyle='#3a6bd6';
-    var swing = p.onGround && (keys.left||keys.right) ? Math.sin(p.walk)*3 : 0;
-    ctx.fillRect(x-6, y-2, 4, 3+Math.max(0,swing)); ctx.fillRect(x+2, y-2, 4, 3+Math.max(0,-swing));
+  function drawLadder(L){
+    var yT=gy(L.hi,L.x), yB=gy(L.lo,L.x);
+    ctx.strokeStyle='#66e0ff'; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(L.x-6,yT); ctx.lineTo(L.x-6,yB); ctx.moveTo(L.x+6,yT); ctx.lineTo(L.x+6,yB);
+    for(var y=yT; y<yB; y+=9){ ctx.moveTo(L.x-6,y); ctx.lineTo(L.x+6,y); } ctx.stroke();
+  }
+  function px(cx,cy,w,h,col){ ctx.fillStyle=col; ctx.fillRect(cx,cy,w,h); }
+  function draw(){
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,BW,BH);
+    for(var gi=0;gi<NG;gi++) drawGirder(gi);
+    for(var i=0;i<LADDERS.length;i++) drawLadder(LADDERS[i]);
+    if(!HAMMER.taken){ var hy=gy(HAMMER.gi,HAMMER.x); px(HAMMER.x-3,hy-24,6,10,'#c98a4a'); px(HAMMER.x-6,hy-26,12,6,'#e0b070'); }
+    drawKong(); drawPauline();
+    for(i=0;i<barrels.length;i++) drawBarrel(barrels[i]);
+    drawMario();
+  }
+  function drawKong(){
+    var bx=52, by=gy(NG-1,52)-64;   // sits above top girder, left
+    px(bx, by+18, 44, 34, '#6b4a24');            // body
+    px(bx+6, by+6, 32, 20, '#7a5628');           // head
+    px(bx-6, by+22, 10, 20, '#6b4a24'); px(bx+40, by+22, 10, 20, '#6b4a24');  // arms
+    px(bx+10, by+24, 24, 16, '#caa06a');         // chest/muzzle
+    px(bx+12, by+12, 6, 6, '#fff'); px(bx+26, by+12, 6, 6, '#fff');           // eyes
+    px(bx+14, by+13, 3, 4, '#201008'); px(bx+28, by+13, 3, 4, '#201008');
+    px(bx+16, by+30, 4, 4, '#3a2410'); px(bx+24, by+30, 4, 4, '#3a2410');     // nostrils
+  }
+  function drawPauline(){
+    var x=118, y=gy(NG-1,118)-2;
+    px(x-4, y-30, 8, 16, '#ff7bd0'); px(x-5, y-14, 10, 4, '#ff7bd0');          // dress
+    px(x-3, y-38, 6, 8, '#ffd7a8'); px(x-4, y-42, 8, 5, '#d94a3a');            // head+hair
+  }
+  function drawBarrel(b){
+    var x=b.x, y=b.y;
+    ctx.save(); ctx.translate(x,y); ctx.rotate(Math.sin(b.spin)*0.15);
+    px(-8,-7,16,14,'#c9822e'); px(-8,-5,16,3,'#8a5518'); px(-8,2,16,3,'#8a5518');
+    px(-6,-7,2,14,'#e0a552'); px(4,-7,2,14,'#e0a552');
+    ctx.restore();
+  }
+  function drawMario(){
+    var x=p.x, y=p.y;      // y = feet on girder
+    var t=y-22;
+    px(x-6, t, 12, 5, '#e2434f');          // cap
+    px(x-6, t+5, 12, 5, '#ffd7a8');        // face
+    px(x-1, t+6, 4, 3, '#3a2410');         // (moustache-ish)
+    px(x-6, t+10, 12, 7, '#3a6bd6');       // overalls torso
+    px(x-6, t+9, 12, 2, '#e2434f');        // shirt line
+    var sw = (!p.air && (keys.left||keys.right)) ? Math.sin(p.walk)*3 : 0;
+    px(x-6, t+17, 5, 5+Math.max(0,sw), '#3a6bd6'); px(x+1, t+17, 5, 5+Math.max(0,-sw), '#3a6bd6');
+    if(p.hammer>0){ var up=Math.floor(animT*8)%2; if(up){ px(x+(p.face>0?6:-12), t-8, 6, 10, '#c98a4a'); px(x+(p.face>0?3:-15), t-10, 12, 6, '#e0b070'); } else { px(x+(p.face>0?8:-14), t+8, 6, 10, '#c98a4a'); px(x+(p.face>0?5:-17), t+14, 12, 6, '#e0b070'); } }
   }
 
   // ---- loop ----
   var last=0;
   function loop(t){
-    var dt = last ? Math.min((t-last)/1000, 0.05) : 0; last=t;
-    if(state==='playing'){ step(dt); Snd.music(150 + level*6); }
+    var dt=last?Math.min((t-last)/1000,0.05):0; last=t;
+    if(state==='playing'){ step(dt); Snd.music(150+level*6); }
     else if(state==='dying'){ dyingT-=dt; if(dyingT<=0) respawn(); }
     else if(state==='win'){ dyingT-=dt; if(dyingT<=0){ startStage(); hideOverlay(); state='playing'; Snd.start(); } }
-    draw();
-    requestAnimationFrame(loop);
+    draw(); requestAnimationFrame(loop);
   }
 
   // ---- input ----
@@ -330,10 +377,10 @@
   })();
 
   resetGame(); state='ready';
-  showOverlay('DONKEY KONG','Climb to the top. Jump the barrels.','Press Enter to start');
+  showOverlay('DONKEY KONG','Climb the girders. Jump the barrels. Save her.','Press Enter to start');
   requestAnimationFrame(loop);
 
-  window.__dk = { floors:NFLOOR, ladders:LADDERS.length, hasAudio:!!Snd, barrels:function(){ return barrels.length; } };
+  window.__dk = { girders:NG, ladders:LADDERS.length, hasAudio:!!Snd, barrels:function(){ return barrels.length; }, gy:gy };
 })();
 </script>
 </body>
