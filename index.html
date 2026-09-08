@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tetris</title>
+<style>
+  :root{
+    --bg:#0e0e14; --panel:#17171f;
+    --text:#f2f2ef; --muted:#8b8b9a; --accent:#22d3ee;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; display:grid; place-items:center;
+    background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg));
+    color:var(--text);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+    user-select:none; -webkit-user-select:none;
+  }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px}
+  .stage{position:relative; line-height:0}
+  canvas#board{
+    border-radius:10px;
+    box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000;
+  }
+  .panel{display:flex; flex-direction:column; gap:12px; width:150px}
+  .stat,.box{
+    background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px;
+  }
+  .row2{display:flex; gap:12px}
+  .row2 .stat{flex:1; padding:10px 8px; text-align:center}
+  .label{
+    display:block; font-size:10px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:4px;
+  }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1}
+  .row2 .value{font-size:18px}
+  .box canvas{display:block; margin:2px auto 0}
+  .keys{font-size:11px; color:var(--muted); line-height:1.9; padding:2px 4px}
+  .credit{
+    margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a;
+    font-size:10px; color:var(--muted); line-height:1.5;
+  }
+  .credit .sig{
+    display:block; font-size:12px; color:var(--accent);
+    font-weight:600; letter-spacing:.02em; margin-bottom:5px;
+  }
+  .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .keys b{
+    color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40;
+    border-radius:4px; padding:1px 5px; font-size:10px;
+  }
+  .overlay{
+    position:absolute; inset:0; display:grid; place-items:center;
+    background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px;
+    text-align:center; line-height:1.5;
+  }
+  .overlay.hidden{display:none}
+  .overlay h2{margin:0 0 6px; font-size:26px; letter-spacing:-.01em}
+  .overlay p{margin:0; color:var(--muted); font-size:13px}
+  .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <div id="overlay" class="overlay">
+      <div>
+        <h2 id="ovTitle">TETRIS</h2>
+        <p id="ovSub">Clear lines. It gets faster.</p>
+        <p class="big" id="ovHint">Press Enter to start</p>
+      </div>
+    </div>
+  </div>
+  <aside class="panel">
+    <div class="stat"><span class="label">Score</span><span class="value" id="uiScore">0</span></div>
+    <div class="stat"><span class="label">Best</span><span class="value" id="uiBest">0</span></div>
+    <div class="row2">
+      <div class="stat"><span class="label">Level</span><span class="value" id="uiLevel">1</span></div>
+      <div class="stat"><span class="label">Lines</span><span class="value" id="uiLines">0</span></div>
+    </div>
+    <div class="box"><span class="label">Next</span><canvas id="next"></canvas></div>
+    <div class="box"><span class="label">Hold</span><canvas id="hold"></canvas></div>
+    <div class="keys">
+      <b>&larr;</b> <b>&rarr;</b> move<br>
+      <b>&darr;</b> soft drop<br>
+      <b>Space</b> hard drop<br>
+      <b>&uarr;</b>/<b>X</b> rotate cw<br>
+      <b>Z</b> rotate ccw<br>
+      <b>C</b> hold &nbsp; <b>P</b> pause<br>
+      <b>M</b> music: <span id="uiMusic">on</span><br>
+      <b>Enter</b> restart
+    </div>
+    <div class="credit">
+      <span class="sig">&#128081; by Slime Queen</span>
+      An arcade toy for the Velvet Bunny Cabaret.
+      <span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score
+      is recorded anywhere. Fan-made and unofficial; not affiliated with, or endorsed by, The Tetris
+      Company or Bondage Club. Provided as-is, for fun.</span>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var COLS = 10, ROWS = 20, CELL = 30;
+  var BW = COLS * CELL, BH = ROWS * CELL;
+  var NCELL = 22, NEXT_COUNT = 3, SLOT_H = NCELL * 2 + 8;
+
+  var COLORS = {
+    I:'#22d3ee', J:'#4f7cf7', L:'#f9853a', O:'#f7c93a',
+    S:'#3ecf6b', T:'#b063f0', Z:'#f2545b'
+  };
+
+  var SHAPES = {
+    I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    J: [[1,0,0],[1,1,1],[0,0,0]],
+    L: [[0,0,1],[1,1,1],[0,0,0]],
+    O: [[1,1],[1,1]],
+    S: [[0,1,1],[1,1,0],[0,0,0]],
+    T: [[0,1,0],[1,1,1],[0,0,0]],
+    Z: [[1,1,0],[0,1,1],[0,0,0]]
+  };
+  var TYPES = ['I','J','L','O','S','T','Z'];
+
+  // Gravity per level, ms per cell. Caps out fast but stays playable.
+  var SPEEDS = [800,715,630,550,470,380,300,220,130,100,83,83,83,67,67,67,50,50,50,40,33];
+  var LOCK_DELAY = 500, MAX_LOCK_RESETS = 15;
+  var DAS = 170, ARR = 45, SOFT_REPEAT = 40, CLEAR_TIME = 150;
+
+  // ---- audio ----
+  // Melody is "Korobeiniki", a 19th-century Russian folk tune (public domain),
+  // synthesized here rather than sampled. Tempo tracks the level.
+  var Sound = (function(){
+    var actx = null, master, musicG, sfxG, noiseBuf;
+    var muted = false, on = false;
+    var nextTime = 0, mIndex = 0;
+
+    // One entry per measure: b = bass root (MIDI), n = [midi|null, beats].
+    var SONG = [
+      { b:40, n:[[76,1],[71,.5],[72,.5],[74,1],[72,.5],[71,.5]] },
+      { b:40, n:[[69,1],[69,.5],[72,.5],[76,1],[74,.5],[72,.5]] },
+      { b:47, n:[[71,1.5],[72,.5],[74,1],[76,1]] },
+      { b:40, n:[[72,1],[69,1],[69,1],[null,1]] },
+      { b:45, n:[[null,.5],[74,1],[77,.5],[81,1],[79,.5],[77,.5]] },
+      { b:40, n:[[76,1.5],[72,.5],[76,1],[74,.5],[72,.5]] },
+      { b:47, n:[[71,1],[71,.5],[72,.5],[74,1],[76,1]] },
+      { b:40, n:[[72,1],[69,1],[69,1],[null,1]] },
+      { b:40, n:[[76,2],[72,2]] },
+      { b:40, n:[[74,2],[71,2]] },
+      { b:45, n:[[72,2],[69,2]] },
+      { b:47, n:[[68,2],[71,2]] },
+      { b:40, n:[[76,2],[72,2]] },
+      { b:40, n:[[74,2],[71,2]] },
+      { b:45, n:[[72,1],[76,1],[81,2]] },
+      { b:47, n:[[80,4]] }
+    ];
+
+    function freq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+
+    try { muted = localStorage.getItem('tetris.muted') === '1'; } catch(e){}
+
+    function init(){
+      var AC = window.AudioContext || window.webkitAudioContext;
+      if(!AC) return false;
+      actx = new AC();
+      master = actx.createGain(); master.gain.value = muted ? 0 : 0.9;
+      master.connect(actx.destination);
+      musicG = actx.createGain(); musicG.gain.value = 0.30; musicG.connect(master);
+      sfxG   = actx.createGain(); sfxG.gain.value   = 0.55; sfxG.connect(master);
+
+      var len = Math.floor(actx.sampleRate * 0.2);
+      noiseBuf = actx.createBuffer(1, len, actx.sampleRate);
+      var d = noiseBuf.getChannelData(0);
+      for(var i=0;i<len;i++) d[i] = Math.random()*2 - 1;
+      return true;
+    }
+
+    function tone(f, t, dur, type, vol, dest, f2){
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(f, t);
+      if(f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(vol, t + 0.012);
+      g.gain.setValueAtTime(vol, t + dur * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(dest);
+      o.start(t); o.stop(t + dur + 0.03);
+    }
+
+    function noise(t, dur, vol, hp){
+      var s = actx.createBufferSource(), g = actx.createGain(), f = actx.createBiquadFilter();
+      s.buffer = noiseBuf;
+      f.type = 'highpass'; f.frequency.value = hp || 6000;
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      s.connect(f); f.connect(g); g.connect(sfxG);
+      s.start(t); s.stop(t + dur);
+    }
+
+    function hat(t, vol){
+      var s = actx.createBufferSource(), g = actx.createGain(), f = actx.createBiquadFilter();
+      s.buffer = noiseBuf;
+      f.type = 'highpass'; f.frequency.value = 8000;
+      g.gain.setValueAtTime(vol, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.05);
+      s.connect(f); f.connect(g); g.connect(musicG);
+      s.start(t); s.stop(t + 0.06);
+    }
+
+    function scheduleMeasure(spb){
+      var m = SONG[mIndex], t0 = nextTime, off = 0, i;
+      for(i=0;i<m.n.length;i++){
+        var note = m.n[i][0], beats = m.n[i][1];
+        if(note !== null) tone(freq(note), t0 + off*spb, beats*spb*0.9, 'square', 0.42, musicG);
+        off += beats;
+      }
+      tone(freq(m.b - 12), t0,           spb*1.7, 'triangle', 0.5, musicG);
+      tone(freq(m.b - 12), t0 + 2*spb,   spb*1.7, 'triangle', 0.5, musicG);
+      for(i=0;i<4;i++) hat(t0 + (i + 0.5)*spb, 0.05);
+    }
+
+    function ensure(){
+      if(!actx && init() === false) return false;
+      if(actx.state === 'suspended') actx.resume();
+      return true;
+    }
+
+    return {
+      startFresh: function(){
+        if(!ensure()) return;
+        mIndex = 0; on = true; nextTime = actx.currentTime + 0.08;
+      },
+      resume: function(){
+        if(!ensure()) return;
+        on = true; nextTime = actx.currentTime + 0.05;
+      },
+      stop: function(){ on = false; },
+      tick: function(level){
+        if(!on || !actx) return;
+        var bpm = Math.min(220, 132 + (level - 1) * 7), spb = 60 / bpm;
+        while(nextTime < actx.currentTime + 0.25){
+          scheduleMeasure(spb);
+          nextTime += 4 * spb;
+          mIndex = (mIndex + 1) % SONG.length;
+        }
+      },
+      toggleMute: function(){
+        muted = !muted;
+        if(master) master.gain.value = muted ? 0 : 0.9;
+        try { localStorage.setItem('tetris.muted', muted ? '1' : '0'); } catch(e){}
+        return muted;
+      },
+      isMuted: function(){ return muted; },
+
+      move:   function(){ if(actx) tone(300, actx.currentTime, 0.04, 'square', 0.12, sfxG); },
+      rotate: function(){ if(actx) tone(420, actx.currentTime, 0.06, 'square', 0.15, sfxG, 560); },
+      hold:   function(){ if(actx) tone(520, actx.currentTime, 0.09, 'triangle', 0.18, sfxG, 720); },
+      drop:   function(){ if(actx){ var t = actx.currentTime; tone(150, t, 0.12, 'square', 0.2, sfxG, 60); noise(t, 0.06, 0.12, 3000); } },
+      lock:   function(){ if(actx) tone(190, actx.currentTime, 0.07, 'square', 0.14, sfxG, 130); },
+      clear:  function(n){
+        if(!actx) return;
+        var t = actx.currentTime, base = [0,72,74,76,79][n] || 72, i;
+        for(i=0;i<n+1;i++) tone(freq(base + i*4), t + i*0.05, 0.16, 'square', 0.2, sfxG);
+        if(n === 4) tone(freq(base + 12), t + 0.22, 0.35, 'square', 0.22, sfxG);
+      },
+      levelUp: function(){
+        if(!actx) return;
+        var t = actx.currentTime, s = [72,76,79,84], i;
+        for(i=0;i<s.length;i++) tone(freq(s[i]), t + i*0.07, 0.2, 'triangle', 0.24, sfxG);
+      },
+      over: function(){
+        if(!actx) return;
+        var t = actx.currentTime, s = [72,69,65,60,53], i;
+        for(i=0;i<s.length;i++) tone(freq(s[i]), t + i*0.14, 0.3, 'square', 0.22, sfxG);
+      }
+    };
+  })();
+
+  function fit(cv, w, h){
+    var d = window.devicePixelRatio || 1;
+    cv.width = Math.round(w*d); cv.height = Math.round(h*d);
+    cv.style.width = w+'px'; cv.style.height = h+'px';
+    var c = cv.getContext('2d');
+    c.setTransform(d,0,0,d,0,0);
+    return c;
+  }
+
+  var ctx  = fit(document.getElementById('board'), BW, BH);
+  var nctx = fit(document.getElementById('next'), NCELL*4, SLOT_H*NEXT_COUNT);
+  var hctx = fit(document.getElementById('hold'), NCELL*4, SLOT_H);
+
+  var ui = {
+    score: document.getElementById('uiScore'),
+    best:  document.getElementById('uiBest'),
+    level: document.getElementById('uiLevel'),
+    lines: document.getElementById('uiLines'),
+    ov:    document.getElementById('overlay'),
+    ovT:   document.getElementById('ovTitle'),
+    ovS:   document.getElementById('ovSub'),
+    ovH:   document.getElementById('ovHint')
+  };
+
+  function loadBest(){
+    try { return parseInt(localStorage.getItem('tetris.best'), 10) || 0; }
+    catch(e){ return 0; }
+  }
+  function saveBest(v){
+    try { localStorage.setItem('tetris.best', String(v)); } catch(e){}
+  }
+
+  var board, piece, bag, queue, hold, canHold;
+  var score, lines, level, best = loadBest();
+  var state = 'ready';           // ready | playing | paused | clearing | over
+  var dropAcc, lockTimer, lockResets, grounded;
+  var clearRows, clearTimer;
+  var dasDir, dasTime, arrAcc, softHeld, softAcc;
+
+  function emptyBoard(){
+    var b = [], r, c;
+    for(r=0;r<ROWS;r++){ b[r]=[]; for(c=0;c<COLS;c++) b[r][c]=null; }
+    return b;
+  }
+
+  function refillBag(){
+    var t = TYPES.slice(), i, j, tmp;
+    for(i=t.length-1;i>0;i--){
+      j = Math.floor(Math.random()*(i+1));
+      tmp=t[i]; t[i]=t[j]; t[j]=tmp;
+    }
+    bag = bag.concat(t);
+  }
+  function nextType(){
+    if(bag.length < 8) refillBag();
+    return bag.shift();
+  }
+
+  function rotateCW(m){
+    var n = m.length, r = [], i, j;
+    for(i=0;i<n;i++){ r[i]=[]; for(j=0;j<n;j++) r[i][j] = m[n-1-j][i]; }
+    return r;
+  }
+  function rotateCCW(m){ return rotateCW(rotateCW(rotateCW(m))); }
+
+  function makePiece(type){
+    return {
+      type: type,
+      m: SHAPES[type].map(function(row){ return row.slice(); }),
+      x: Math.floor((COLS - SHAPES[type][0].length) / 2),
+      y: type === 'I' ? -1 : 0
+    };
+  }
+
+  function collide(m, px, py){
+    var r, c, nr, nc;
+    for(r=0;r<m.length;r++){
+      for(c=0;c<m[r].length;c++){
+        if(!m[r][c]) continue;
+        nr = py + r; nc = px + c;
+        if(nc < 0 || nc >= COLS || nr >= ROWS) return true;
+        if(nr >= 0 && board[nr][nc]) return true;
+      }
+    }
+    return false;
+  }
+
+  function spawn(){
+    piece = makePiece(queue.shift());
+    queue.push(nextType());
+    lockTimer = 0; lockResets = 0; grounded = false; dropAcc = 0;
+    if(collide(piece.m, piece.x, piece.y)) gameOver();
+  }
+
+  function reset(){
+    board = emptyBoard();
+    bag = []; refillBag();
+    queue = [];
+    for(var i=0;i<NEXT_COUNT;i++) queue.push(nextType());
+    hold = null; canHold = true;
+    score = 0; lines = 0; level = 1;
+    dropAcc = 0; lockTimer = 0; lockResets = 0; grounded = false;
+    clearRows = null; clearTimer = 0;
+    dasDir = 0; dasTime = 0; arrAcc = 0; softHeld = false; softAcc = 0;
+    spawn();
+    syncUI();
+  }
+
+  function gravityMs(){
+    return SPEEDS[Math.min(level - 1, SPEEDS.length - 1)];
+  }
+
+  // Refresh the lock delay after a successful move/rotate while resting,
+  // but only a bounded number of times so a piece can't be stalled forever.
+  function touchLock(){
+    if(grounded && lockResets < MAX_LOCK_RESETS){
+      lockTimer = 0; lockResets++;
+    }
+  }
+
+  function move(dx){
+    if(collide(piece.m, piece.x + dx, piece.y)) return false;
+    piece.x += dx; touchLock(); Sound.move();
+    return true;
+  }
+
+  function softStep(){
+    if(collide(piece.m, piece.x, piece.y + 1)) return false;
+    piece.y++; lockTimer = 0;
+    return true;
+  }
+
+  function rotate(dir){
+    var m = dir > 0 ? rotateCW(piece.m) : rotateCCW(piece.m);
+    var kicks = [0, -1, 1, -2, 2];
+    for(var i=0;i<kicks.length;i++){
+      if(!collide(m, piece.x + kicks[i], piece.y)){
+        piece.m = m; piece.x += kicks[i]; touchLock(); Sound.rotate();
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function ghostY(){
+    var y = piece.y;
+    while(!collide(piece.m, piece.x, y + 1)) y++;
+    return y;
+  }
+
+  function hardDrop(){
+    var dist = ghostY() - piece.y;
+    piece.y += dist;
+    score += dist * 2;
+    Sound.drop();
+    lockPiece();
+  }
+
+  function doHold(){
+    if(!canHold) return;
+    var swap = hold;
+    hold = piece.type;
+    if(swap){
+      piece = makePiece(swap);
+      lockTimer = 0; lockResets = 0; dropAcc = 0;
+      if(collide(piece.m, piece.x, piece.y)) gameOver();
+    } else {
+      spawn();
+    }
+    canHold = false;
+    Sound.hold();
+    syncUI();
+  }
+
+  function lockPiece(){
+    var r, c, nr, nc;
+    for(r=0;r<piece.m.length;r++){
+      for(c=0;c<piece.m[r].length;c++){
+        if(!piece.m[r][c]) continue;
+        nr = piece.y + r; nc = piece.x + c;
+        if(nr < 0){ gameOver(); return; }
+        board[nr][nc] = piece.type;
+      }
+    }
+    var full = [];
+    for(r=0;r<ROWS;r++){
+      var solid = true;
+      for(c=0;c<COLS;c++){ if(!board[r][c]){ solid = false; break; } }
+      if(solid) full.push(r);
+    }
+    canHold = true;
+    if(full.length){
+      clearRows = full; clearTimer = 0; state = 'clearing';
+      Sound.clear(full.length);
+    } else {
+      spawn();
+      Sound.lock();
+    }
+    syncUI();
+  }
+
+  function finishClear(){
+    var n = clearRows.length, i, c;
+    for(i=0;i<n;i++) board.splice(clearRows[i], 1);
+    for(i=0;i<n;i++){
+      var row = [];
+      for(c=0;c<COLS;c++) row.push(null);
+      board.unshift(row);
+    }
+    score += [0,100,300,500,800][n] * level;
+    lines += n;
+    var prevLevel = level;
+    level = Math.floor(lines / 10) + 1;
+    if(level > prevLevel) Sound.levelUp();
+    clearRows = null;
+    state = 'playing';
+    spawn();
+    syncUI();
+  }
+
+  function gameOver(){
+    state = 'over';
+    Sound.stop();
+    Sound.over();
+    if(score > best){ best = score; saveBest(best); }
+    showOverlay('GAME OVER',
+                'Score ' + score + '  ·  Level ' + level + '  ·  ' + lines + ' lines',
+                'Press Enter to play again');
+    syncUI();
+  }
+
+  function showOverlay(t, s, h){
+    ui.ovT.textContent = t; ui.ovS.textContent = s; ui.ovH.textContent = h;
+    ui.ov.classList.remove('hidden');
+  }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+
+  function syncMusicLabel(){
+    var el = document.getElementById('uiMusic');
+    if(el) el.textContent = Sound.isMuted() ? 'off' : 'on';
+  }
+
+  function syncUI(){
+    ui.score.textContent = score;
+    ui.best.textContent  = best;
+    ui.level.textContent = level;
+    ui.lines.textContent = lines;
+    drawPreviews();
+  }
+
+  // ---- drawing ----
+
+  function rr(c, x, y, w, h, r){
+    if(c.roundRect){ c.beginPath(); c.roundRect(x,y,w,h,r); return; }
+    c.beginPath();
+    c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r);
+    c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath();
+  }
+
+  function cell(c, px, py, size, color){
+    c.fillStyle = color;
+    rr(c, px+1, py+1, size-2, size-2, size*0.16); c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.22)';
+    rr(c, px+1, py+1, size-2, (size-2)*0.34, size*0.16); c.fill();
+    c.fillStyle = 'rgba(0,0,0,0.18)';
+    rr(c, px+1, py + size*0.62, size-2, size*0.36, size*0.16); c.fill();
+  }
+
+  function ghostCell(c, px, py, size, color){
+    c.save();
+    c.globalAlpha = 0.16; c.fillStyle = color;
+    rr(c, px+1, py+1, size-2, size-2, size*0.16); c.fill();
+    c.globalAlpha = 0.5; c.strokeStyle = color; c.lineWidth = 2;
+    rr(c, px+2, py+2, size-4, size-4, size*0.14); c.stroke();
+    c.restore();
+  }
+
+  function draw(){
+    ctx.fillStyle = '#101018';
+    ctx.fillRect(0,0,BW,BH);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for(var i=1;i<COLS;i++){ ctx.moveTo(i*CELL+0.5, 0); ctx.lineTo(i*CELL+0.5, BH); }
+    for(var j=1;j<ROWS;j++){ ctx.moveTo(0, j*CELL+0.5); ctx.lineTo(BW, j*CELL+0.5); }
+    ctx.stroke();
+
+    var r, c;
+    for(r=0;r<ROWS;r++){
+      for(c=0;c<COLS;c++){
+        if(board[r][c]) cell(ctx, c*CELL, r*CELL, CELL, COLORS[board[r][c]]);
+      }
+    }
+
+    if(state === 'clearing' && clearRows){
+      var a = 0.85 * (1 - clearTimer / CLEAR_TIME);
+      ctx.fillStyle = 'rgba(255,255,255,' + a.toFixed(3) + ')';
+      for(var k=0;k<clearRows.length;k++) ctx.fillRect(0, clearRows[k]*CELL, BW, CELL);
+    }
+
+    if(piece && (state === 'playing' || state === 'paused')){
+      var gy = ghostY(), pr, pc;
+      for(pr=0;pr<piece.m.length;pr++){
+        for(pc=0;pc<piece.m[pr].length;pc++){
+          if(!piece.m[pr][pc]) continue;
+          if(gy + pr >= 0) ghostCell(ctx, (piece.x+pc)*CELL, (gy+pr)*CELL, CELL, COLORS[piece.type]);
+        }
+      }
+      for(pr=0;pr<piece.m.length;pr++){
+        for(pc=0;pc<piece.m[pr].length;pc++){
+          if(!piece.m[pr][pc]) continue;
+          if(piece.y + pr >= 0) cell(ctx, (piece.x+pc)*CELL, (piece.y+pr)*CELL, CELL, COLORS[piece.type]);
+        }
+      }
+    }
+  }
+
+  function drawMini(c, type, slot){
+    var m = SHAPES[type], minr=9, maxr=-1, minc=9, maxc=-1, r, cc;
+    for(r=0;r<m.length;r++){
+      for(cc=0;cc<m[r].length;cc++){
+        if(!m[r][cc]) continue;
+        if(r<minr) minr=r;
+        if(r>maxr) maxr=r;
+        if(cc<minc) minc=cc;
+        if(cc>maxc) maxc=cc;
+      }
+    }
+    var w = maxc-minc+1, h = maxr-minr+1;
+    var ox = (4 - w) * NCELL / 2;
+    var oy = slot * SLOT_H + (2 - h) * NCELL / 2 + 4;
+    for(r=minr;r<=maxr;r++){
+      for(cc=minc;cc<=maxc;cc++){
+        if(m[r][cc]) cell(c, ox + (cc-minc)*NCELL, oy + (r-minr)*NCELL, NCELL, COLORS[type]);
+      }
+    }
+  }
+
+  function drawPreviews(){
+    nctx.clearRect(0, 0, NCELL*4, SLOT_H*NEXT_COUNT);
+    for(var i=0;i<NEXT_COUNT && i<queue.length;i++) drawMini(nctx, queue[i], i);
+    hctx.clearRect(0, 0, NCELL*4, SLOT_H);
+    if(hold){
+      hctx.save();
+      if(!canHold) hctx.globalAlpha = 0.35;
+      drawMini(hctx, hold, 0);
+      hctx.restore();
+    }
+  }
+
+  // ---- loop ----
+
+  var last = 0;
+  function loop(t){
+    var dt = last ? Math.min(t - last, 100) : 0;
+    last = t;
+
+    if(state === 'playing'){
+      if(dasDir){
+        dasTime += dt;
+        if(dasTime >= DAS){
+          arrAcc += dt;
+          while(arrAcc >= ARR){ arrAcc -= ARR; if(!move(dasDir)) break; }
+        }
+      }
+      if(softHeld){
+        softAcc += dt;
+        while(softAcc >= SOFT_REPEAT){
+          softAcc -= SOFT_REPEAT;
+          if(softStep()) score += 1; else break;
+        }
+      }
+
+      dropAcc += dt;
+      if(dropAcc >= gravityMs()){
+        dropAcc = 0;
+        softStep();
+      }
+
+      grounded = collide(piece.m, piece.x, piece.y + 1);
+      if(grounded){
+        lockTimer += dt;
+        if(lockTimer >= LOCK_DELAY) lockPiece();
+      } else {
+        lockTimer = 0;
+      }
+      Sound.tick(level);
+      syncUI();
+    } else if(state === 'clearing'){
+      clearTimer += dt;
+      if(clearTimer >= CLEAR_TIME) finishClear();
+    }
+
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  // ---- input ----
+
+  var HANDLED = {
+    ArrowLeft:1, ArrowRight:1, ArrowDown:1, ArrowUp:1, Space:1,
+    KeyZ:1, KeyX:1, KeyC:1, KeyP:1, KeyM:1, Enter:1, ShiftLeft:1
+  };
+
+  document.addEventListener('keydown', function(e){
+    if(HANDLED[e.code]) e.preventDefault();
+
+    if(e.code === 'Enter'){
+      // Restart from any state: ready, playing, paused, clearing or over.
+      reset(); hideOverlay(); state = 'playing';
+      Sound.startFresh();
+      return;
+    }
+    if(e.code === 'KeyM'){
+      Sound.toggleMute();
+      syncMusicLabel();
+      return;
+    }
+    if(e.code === 'KeyP'){
+      if(state === 'playing'){
+        state = 'paused';
+        Sound.stop();
+        showOverlay('PAUSED', 'Score ' + score + '  ·  Level ' + level, 'Press P to resume');
+      } else if(state === 'paused'){
+        state = 'playing'; hideOverlay();
+        Sound.resume();
+      }
+      return;
+    }
+    if(state !== 'playing' || e.repeat) return;
+
+    switch(e.code){
+      case 'ArrowLeft':  dasDir = -1; dasTime = 0; arrAcc = 0; move(-1); break;
+      case 'ArrowRight': dasDir =  1; dasTime = 0; arrAcc = 0; move(1);  break;
+      case 'ArrowDown':  softHeld = true; softAcc = 0; if(softStep()) score += 1; break;
+      case 'ArrowUp':
+      case 'KeyX':       rotate(1); break;
+      case 'KeyZ':       rotate(-1); break;
+      case 'Space':      hardDrop(); break;
+      case 'KeyC':
+      case 'ShiftLeft':  doHold(); break;
+    }
+  });
+
+  document.addEventListener('keyup', function(e){
+    if(e.code === 'ArrowLeft'  && dasDir === -1) dasDir = 0;
+    if(e.code === 'ArrowRight' && dasDir ===  1) dasDir = 0;
+    if(e.code === 'ArrowDown') softHeld = false;
+  });
+
+  window.addEventListener('blur', function(){
+    dasDir = 0; softHeld = false;
+    if(state === 'playing'){
+      state = 'paused';
+      Sound.stop();
+      showOverlay('PAUSED', 'Score ' + score + '  ·  Level ' + level, 'Press P to resume');
+    }
+  });
+
+  reset();
+  syncMusicLabel();
+  state = 'ready';
+  showOverlay('TETRIS', 'Clear lines. It gets faster.', 'Press Enter to start');
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
