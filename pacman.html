@@ -553,11 +553,18 @@
 
   // Konami code -> instantly clear the current maze. (Shared cheat; other games later.)
   var KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','KeyB','KeyA'];
-  var konamiIdx = 0;
+  var konamiBuf = [];
+  // Sliding window over the LAST 10 keys. A single-index matcher desynced mid-level:
+  // arrow movement left the index dirty, and because the code opens with two Ups a
+  // stale index misaligned a clean entry. Comparing the last N keys is state-proof.
   // Returns true if this keypress COMPLETED the code (and cleared the stage).
   function konami(code){
-    if(code === KONAMI[konamiIdx]){ konamiIdx++; if(konamiIdx === KONAMI.length){ konamiIdx = 0; cheatClearStage(); return true; } }
-    else konamiIdx = (code === KONAMI[0]) ? 1 : 0;
+    konamiBuf.push(code);
+    if(konamiBuf.length > KONAMI.length) konamiBuf.shift();
+    if(konamiBuf.length === KONAMI.length){
+      for(var i=0;i<KONAMI.length;i++){ if(konamiBuf[i] !== KONAMI[i]) return false; }
+      konamiBuf = []; cheatClearStage(); return true;
+    }
     return false;
   }
   function cheatClearStage(){

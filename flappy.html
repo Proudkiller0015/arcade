@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Flap</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#ffd54a; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center;
+    background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg));
+    color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px}
+  .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#0c1018; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:170px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .label{ display:block; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1}
+  .keys{font-size:11px; color:var(--muted); line-height:1.9; padding:2px 4px}
+  .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; letter-spacing:.02em; margin-bottom:5px; }
+  .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none}
+  .overlay h2{margin:0 0 6px; font-size:26px; letter-spacing:-.01em}
+  .overlay p{margin:0; color:var(--muted); font-size:13px}
+  .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+
+  #touch{ display:none; width:100%; max-width:300px; box-sizing:border-box; touch-action:none; justify-content:center; }
+  .onebtn{ width:100%; }
+  .tbtn{ -webkit-appearance:none; appearance:none; background:var(--panel); color:var(--text);
+    border:1px solid #2e2e40; border-radius:12px; height:64px; font-size:20px; line-height:1; width:100%;
+    display:flex; align-items:center; justify-content:center; font-family:inherit; cursor:pointer; touch-action:none;
+    user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; }
+  .tbtn:active{ background:#23232f; border-color:var(--accent); transform:translateY(1px); }
+  #btnPause, #btnMute{ display:none; position:absolute; top:6px; z-index:2; padding:0; width:38px; height:38px;
+    border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text);
+    align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  #btnPause{ right:6px; } #btnMute{ left:6px; }
+  body.touch #touch{ display:flex; } body.touch #btnPause, body.touch #btnMute{ display:flex; }
+
+  @media (pointer: coarse), (max-width: 680px){
+    body{ display:block; min-height:100dvh; }
+    .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; }
+    .stage{ order:1; } #touch{ order:2; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; }
+    .panel .stat{ flex:1 1 90px; min-width:90px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; }
+    .credit{ flex:1 1 100%; order:5; margin-top:2px; text-align:center; }
+    canvas#board{ height:60vh !important; width:auto !important; max-width:94vw; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnPause" type="button" tabindex="-1" aria-label="Pause">&#10074;&#10074;</button>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay">
+      <div>
+        <h2 id="ovTitle">FLAP</h2>
+        <p id="ovSub">Tap to flap. Thread the gaps.</p>
+        <p class="big" id="ovHint">Press Space to start</p>
+      </div>
+    </div>
+  </div>
+  <aside class="panel">
+    <div class="stat"><span class="label">Score</span><span class="value" id="uiScore">0</span></div>
+    <div class="stat"><span class="label">Best</span><span class="value" id="uiBest">0</span></div>
+    <div class="keys">
+      <b>Space</b> / <b>&uarr;</b> / tap &mdash; flap<br>
+      <b>P</b> pause &nbsp; <b>Enter</b> restart<br>
+      One tap of lift against gravity. Don't touch anything.
+    </div>
+    <div class="credit">
+      <span class="sig">&#128081; by Slime Queen</span>
+      An arcade toy for the Velvet Bunny Cabaret.
+      <span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is
+      recorded anywhere. All-original code and art. Provided as-is, for fun.</span>
+    </div>
+  </aside>
+
+  <div id="touch" aria-hidden="true">
+    <div class="onebtn">
+      <button class="tbtn" type="button" tabindex="-1" data-act="flap" aria-label="Flap">&#9650; FLAP</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var Snd = (function(KEY){
+    var actx=null, master, muted=false, on=false, nextTime=0, mIdx=0, song=null;
+    try{ muted = localStorage.getItem(KEY)==='1'; }catch(e){}
+    function init(){ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return false; actx=new AC();
+      master=actx.createGain(); master.gain.value=muted?0:0.85; master.connect(actx.destination); return true; }
+    function ok(){ if(!actx && !init()) return false; if(actx.state==='suspended') actx.resume(); return true; }
+    function mf(m){ return 440*Math.pow(2,(m-69)/12); }
+    function t(f,at,dur,type,vol,f2){ var o=actx.createOscillator(),g=actx.createGain(); o.type=type||'square';
+      o.frequency.setValueAtTime(f,at); if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);
+      g.gain.setValueAtTime(0.0001,at); g.gain.exponentialRampToValueAtTime(vol,at+0.008); g.gain.setValueAtTime(vol,at+dur*0.6); g.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+      o.connect(g); g.connect(master); o.start(at); o.stop(at+dur+0.02); }
+    return {
+      setSong:function(s){ song=s; },
+      start:function(){ if(!ok())return; on=true; mIdx=0; nextTime=actx.currentTime+0.08; },
+      resume:function(){ if(!ok())return; on=true; nextTime=actx.currentTime+0.05; },
+      stop:function(){ on=false; },
+      music:function(bpm){ if(!on||!actx||!song)return; var spb=60/bpm;
+        while(nextTime < actx.currentTime+0.3){ var n=song[mIdx]; if(n[0]){ t(mf(n[0]),nextTime,n[1]*spb*0.9,'square',0.1); } mIdx=(mIdx+1)%song.length; nextTime+=n[1]*spb; } },
+      toggle:function(){ muted=!muted; if(master)master.gain.value=muted?0:0.85; try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){} return muted; },
+      isMuted:function(){ return muted; },
+      sfx:function(f,dur,type,vol,f2){ if(ok()) t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2); },
+      seq:function(notes,step,type,vol){ if(!ok())return; var c=actx.currentTime; for(var i=0;i<notes.length;i++){ t(mf(notes[i]),c+i*step,step*0.9,type||'square',vol||0.2); } }
+    };
+  })('flappy.muted');
+  Snd.setSong([[67,.25],[71,.25],[74,.25],[71,.25],[69,.25],[72,.25],[76,.25],[72,.25],
+               [67,.25],[71,.25],[74,.25],[79,.25],[76,.5],[0,.25]]);
+
+  var BW=360, BH=480;
+  function fit(cv,w,h){ var d=window.devicePixelRatio||1; cv.width=Math.round(w*d); cv.height=Math.round(h*d);
+    cv.style.width=w+'px'; cv.style.height=h+'px'; var c=cv.getContext('2d'); c.setTransform(d,0,0,d,0,0); return c; }
+  var ctx=fit(document.getElementById('board'), BW, BH);
+
+  var ui={ score:document.getElementById('uiScore'), best:document.getElementById('uiBest'),
+    ov:document.getElementById('overlay'), ovT:document.getElementById('ovTitle'), ovS:document.getElementById('ovSub'), ovH:document.getElementById('ovHint') };
+
+  function loadBest(){ try { return parseInt(localStorage.getItem('flappy.best'),10)||0; } catch(e){ return 0; } }
+  function saveBest(v){ try { localStorage.setItem('flappy.best', String(v)); } catch(e){} }
+
+  var GROUND=44, GRAV=1500, FLAP=-420, PIPEW=54, GAP=140, SPACING=210, SPEED=132, BIRDR=13, BIRDX=96;
+  var birdY, birdV, pipes, score, best=loadBest(), spawnX, tilt=0;
+  var state='ready', deadFlash=0;
+
+  function newGame(){ birdY=BH*0.42; birdV=0; pipes=[]; score=0; tilt=0; spawnX=BW+60; spawnPipes(); syncUI(); }
+  function spawnPipes(){
+    // pre-fill a few pipes to the right
+    while(pipes.length<4){ var last=pipes.length?pipes[pipes.length-1].x:BW+40;
+      var gy=60 + Math.random()*(BH-GROUND-GAP-120);
+      pipes.push({ x:last+SPACING, gapY:gy, passed:false }); }
+  }
+  function flap(){ if(state==='playing'){ birdV=FLAP; Snd.sfx(520,0.06,'square',0.16,720); }
+    else if(state==='ready'||state==='over'){ startGame(); } }
+
+  function syncUI(){ ui.score.textContent=score; ui.best.textContent=best; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')){ h=h.replace('Press Space to start','Tap to start').replace('Press Enter to play again','Tap to play again').replace('Press P to resume','Tap to resume'); }
+    ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent = Snd.isMuted() ? '\u{1F507}' : '\u{1F50A}'; }
+  function startGame(){ newGame(); hideOverlay(); state='playing'; birdV=FLAP*0.6; Snd.start(); }
+  function togglePause(){ if(state==='playing'){ state='paused'; Snd.stop(); showOverlay('PAUSED','Score '+score,'Press P to resume'); } else if(state==='paused'){ state='playing'; hideOverlay(); Snd.resume(); } }
+
+  function die(){ state='dead'; deadFlash=0.6; Snd.stop(); Snd.seq([64,59,52,45],0.12,'sawtooth',0.24); if(score>best){best=score;saveBest(best);} }
+  function overAfterFlash(){ showOverlay('GAME OVER','Score '+score,'Press Enter to play again'); state='over'; syncUI(); }
+
+  function step(dt){
+    birdV += GRAV*dt; birdY += birdV*dt;
+    tilt = Math.max(-0.5, Math.min(1.2, birdV/600));
+    // ceiling / ground
+    if(birdY < BIRDR){ birdY=BIRDR; birdV=0; }
+    if(birdY > BH-GROUND-BIRDR){ birdY=BH-GROUND-BIRDR; die(); return; }
+    // pipes
+    for(var i=0;i<pipes.length;i++){ var p=pipes[i]; p.x -= SPEED*dt;
+      if(!p.passed && p.x+PIPEW < BIRDX-BIRDR){ p.passed=true; score++; syncUI(); Snd.sfx(700,0.05,'square',0.16,940); }
+      // collision
+      if(BIRDX+BIRDR>p.x && BIRDX-BIRDR<p.x+PIPEW){
+        if(birdY-BIRDR < p.gapY || birdY+BIRDR > p.gapY+GAP){ die(); return; }
+      }
+    }
+    // recycle
+    if(pipes.length && pipes[0].x+PIPEW < -10){ pipes.shift();
+      var last=pipes[pipes.length-1]; var gy=60 + Math.random()*(BH-GROUND-GAP-120);
+      pipes.push({ x:last.x+SPACING, gapY:gy, passed:false });
+    }
+  }
+
+  function draw(){
+    // sky
+    var g=ctx.createLinearGradient(0,0,0,BH); g.addColorStop(0,'#0c1626'); g.addColorStop(1,'#0c1018');
+    ctx.fillStyle=g; ctx.fillRect(0,0,BW,BH);
+    // pipes
+    for(var i=0;i<pipes.length;i++){ var p=pipes[i];
+      ctx.fillStyle='#5ad469'; rr(p.x,0,PIPEW,p.gapY,4); ctx.fill();
+      rr(p.x,p.gapY+GAP,PIPEW,BH-GROUND-(p.gapY+GAP),4); ctx.fill();
+      ctx.fillStyle='#49b658'; rr(p.x-3,p.gapY-16,PIPEW+6,16,4); ctx.fill(); rr(p.x-3,p.gapY+GAP,PIPEW+6,16,4); ctx.fill();
+    }
+    // ground
+    ctx.fillStyle='#1c2a17'; ctx.fillRect(0,BH-GROUND,BW,GROUND);
+    ctx.fillStyle='#243a1e'; for(var x=0;x<BW;x+=18){ ctx.fillRect(x,BH-GROUND,10,6); }
+    // bird
+    ctx.save(); ctx.translate(BIRDX,birdY); ctx.rotate(tilt);
+    ctx.fillStyle='#ffd54a'; ctx.beginPath(); ctx.arc(0,0,BIRDR,0,7); ctx.fill();
+    ctx.fillStyle='#ffb300'; ctx.beginPath(); ctx.ellipse(-3,3,7,5,0,0,7); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(5,-4,4,0,7); ctx.fill();
+    ctx.fillStyle='#222'; ctx.beginPath(); ctx.arc(6,-4,2,0,7); ctx.fill();
+    ctx.fillStyle='#ff8c2b'; ctx.beginPath(); ctx.moveTo(BIRDR-2,-1); ctx.lineTo(BIRDR+7,2); ctx.lineTo(BIRDR-2,5); ctx.closePath(); ctx.fill();
+    ctx.restore();
+    if(state==='dead'){ ctx.fillStyle='rgba(242,84,91,'+(0.35*Math.max(0,deadFlash))+')'; ctx.fillRect(0,0,BW,BH); }
+  }
+  function rr(x,y,w,h,rad){ if(h<0)h=0; ctx.beginPath(); if(ctx.roundRect){ ctx.roundRect(x,y,w,h,rad); } else { ctx.moveTo(x+rad,y); ctx.arcTo(x+w,y,x+w,y+h,rad); ctx.arcTo(x+w,y+h,x,y+h,rad); ctx.arcTo(x,y+h,x,y,rad); ctx.arcTo(x,y,x+w,y,rad); ctx.closePath(); } }
+
+  var last=0, acc=0, STEP=1/120;
+  function loop(t){
+    var dt=last?Math.min((t-last)/1000,0.05):0; last=t;
+    if(state==='playing'){ acc+=dt; var guard=0; while(acc>=STEP && guard<20){ acc-=STEP; step(STEP); if(state!=='playing') break; guard++; } Snd.music(132); }
+    else if(state==='dead'){ deadFlash-=dt; if(deadFlash<=0) overAfterFlash(); }
+    draw(); requestAnimationFrame(loop);
+  }
+
+  var HANDLED={Space:1,ArrowUp:1,KeyP:1,Enter:1,KeyW:1,KeyM:1};
+  document.addEventListener('keydown', function(e){
+    if(HANDLED[e.code]) e.preventDefault();
+    if(e.code==='KeyP'){ togglePause(); return; }
+    if(e.code==='KeyM'){ Snd.toggle(); syncMute(); return; }
+    if(e.code==='Enter'){ startGame(); return; }
+    if(e.code==='Space'||e.code==='ArrowUp'||e.code==='KeyW'){ flap(); }
+  });
+  window.addEventListener('blur', function(){ if(state==='playing'){ state='paused'; Snd.stop(); showOverlay('PAUSED','Score '+score,'Press P to resume'); } });
+
+  var canvas=document.getElementById('board');
+  canvas.addEventListener('pointerdown', function(e){ e.preventDefault(); if(state==='paused'){ togglePause(); return; } flap(); });
+
+  (function setupTouch(){
+    var pad=document.getElementById('touch'), pauseBtn=document.getElementById('btnPause'), muteBtn=document.getElementById('btnMute');
+    function tap(btn,fn){ btn.addEventListener('pointerdown',function(e){ e.preventDefault(); fn(); }); }
+    if(pad){ var b=pad.querySelector('[data-act="flap"]'); if(b) tap(b, flap); }
+    if(pauseBtn) tap(pauseBtn, togglePause);
+    if(muteBtn) tap(muteBtn, function(){ Snd.toggle(); syncMute(); });
+    syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); if(state==='paused') togglePause(); else startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch')) return; document.body.classList.add('touch'); if(pad) pad.setAttribute('aria-hidden','false');
+      if(ui.ovH) ui.ovH.textContent = ui.ovH.textContent.replace('Press Space to start','Tap to start').replace('Press Enter to play again','Tap to play again').replace('Press P to resume','Tap to resume'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart' in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches);
+    if(isTouch) enableTouch();
+    window.addEventListener('touchstart', enableTouch, {passive:true, once:true});
+  })();
+
+  newGame(); state='ready';
+  showOverlay('FLAP','Tap to flap. Thread the gaps.','Press Space to start');
+  requestAnimationFrame(loop);
+
+  window.__flappy = {
+    st:function(){ return state; }, score:function(){ return score; },
+    birdY:function(){ return Math.round(birdY); }, pipeCount:function(){ return pipes.length; },
+    flap:flap, hasAudio:!!Snd,
+    sim:function(n,dt){ dt=dt||1/120; for(var i=0;i<n && state==='playing';i++){ step(dt); } }
+  };
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Simon</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#b06cff; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center;
+    background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg));
+    color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px}
+  .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#0c1018; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:170px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .label{ display:block; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1}
+  .keys{font-size:11px; color:var(--muted); line-height:1.9; padding:2px 4px}
+  .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; letter-spacing:.02em; margin-bottom:5px; }
+  .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none}
+  .overlay h2{margin:0 0 6px; font-size:26px; letter-spacing:-.01em}
+  .overlay p{margin:0; color:var(--muted); font-size:13px}
+  .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+
+  #touch{ display:none; }
+  #btnPause, #btnMute{ display:none; position:absolute; top:6px; z-index:2; padding:0; width:38px; height:38px;
+    border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text);
+    align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  #btnMute{ left:6px; }
+  body.touch #btnMute{ display:flex; }
+
+  @media (pointer: coarse), (max-width: 680px){
+    body{ display:block; min-height:100dvh; }
+    .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; }
+    .stage{ order:1; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; }
+    .panel .stat{ flex:1 1 100px; min-width:100px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; }
+    .credit{ flex:1 1 100%; order:5; margin-top:2px; text-align:center; }
+    canvas#board{ width:88vw !important; height:auto !important; max-width:420px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay">
+      <div>
+        <h2 id="ovTitle">SIMON</h2>
+        <p id="ovSub">Watch the pattern. Repeat it. Each round adds one.</p>
+        <p class="big" id="ovHint">Press Enter to start</p>
+      </div>
+    </div>
+  </div>
+  <aside class="panel">
+    <div class="stat"><span class="label">Round</span><span class="value" id="uiRound">0</span></div>
+    <div class="stat"><span class="label">Best</span><span class="value" id="uiBest">0</span></div>
+    <div class="keys">
+      Tap or click the pads.<br>
+      <b>1</b><b>2</b><b>3</b><b>4</b> or arrows also play them<br>
+      <b>Enter</b> restart. One slip ends the run.
+    </div>
+    <div class="credit">
+      <span class="sig">&#128081; by Slime Queen</span>
+      An arcade toy for the Velvet Bunny Cabaret.
+      <span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is
+      recorded anywhere. All-original code and art. Provided as-is, for fun.</span>
+    </div>
+  </aside>
+  <div id="touch" aria-hidden="true"></div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var Snd = (function(KEY){
+    var actx=null, master, muted=false;
+    try{ muted = localStorage.getItem(KEY)==='1'; }catch(e){}
+    function init(){ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return false; actx=new AC();
+      master=actx.createGain(); master.gain.value=muted?0:0.85; master.connect(actx.destination); return true; }
+    function ok(){ if(!actx && !init()) return false; if(actx.state==='suspended') actx.resume(); return true; }
+    function mf(m){ return 440*Math.pow(2,(m-69)/12); }
+    function t(f,at,dur,type,vol,f2){ var o=actx.createOscillator(),g=actx.createGain(); o.type=type||'sine';
+      o.frequency.setValueAtTime(f,at); if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);
+      g.gain.setValueAtTime(0.0001,at); g.gain.exponentialRampToValueAtTime(vol,at+0.01); g.gain.setValueAtTime(vol,at+dur*0.7); g.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+      o.connect(g); g.connect(master); o.start(at); o.stop(at+dur+0.02); }
+    return {
+      toggle:function(){ muted=!muted; if(master)master.gain.value=muted?0:0.85; try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){} return muted; },
+      isMuted:function(){ return muted; },
+      tone:function(f,dur){ if(ok()) t(f,actx.currentTime,dur||0.32,'sine',0.28); },
+      sfx:function(f,dur,type,vol,f2){ if(ok()) t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2); },
+      seq:function(notes,step,type,vol){ if(!ok())return; var c=actx.currentTime; for(var i=0;i<notes.length;i++){ t(mf(notes[i]),c+i*step,step*0.9,type||'square',vol||0.2); } }
+    };
+  })('simon.muted');
+
+  var BW=320, BH=320;
+  function fit(cv,w,h){ var d=window.devicePixelRatio||1; cv.width=Math.round(w*d); cv.height=Math.round(h*d);
+    cv.style.width=w+'px'; cv.style.height=h+'px'; var c=cv.getContext('2d'); c.setTransform(d,0,0,d,0,0); return c; }
+  var canvas=document.getElementById('board');
+  var ctx=fit(canvas, BW, BH);
+
+  var ui={ round:document.getElementById('uiRound'), best:document.getElementById('uiBest'),
+    ov:document.getElementById('overlay'), ovT:document.getElementById('ovTitle'), ovS:document.getElementById('ovSub'), ovH:document.getElementById('ovHint') };
+
+  function loadBest(){ try { return parseInt(localStorage.getItem('simon.best'),10)||0; } catch(e){ return 0; } }
+  function saveBest(v){ try { localStorage.setItem('simon.best', String(v)); } catch(e){} }
+
+  // pads: 0=TL green, 1=TR red, 2=BL yellow, 3=BR blue
+  var PADS=[
+    { base:'#1f6b34', lit:'#4be07a', tone:329.63 },  // E4
+    { base:'#7a2530', lit:'#ff5b6b', tone:440.00 },  // A4
+    { base:'#7a6420', lit:'#ffd54a', tone:554.37 },  // C#5
+    { base:'#233a7a', lit:'#5aa0ff', tone:659.25 }   // E5
+  ];
+  var seq, inputIdx, round, best=loadBest(), lit=-1, litTimer=0;
+  var state='ready';
+  // playback scheduling
+  var playPhase=0, playTimer=0, playIdx=0;
+  var ON=0.44, OFF=0.18;
+
+  function newGame(){ seq=[]; round=0; addStep(); syncUI(); }
+  function addStep(){ seq.push(Math.floor(Math.random()*4)); round=seq.length; beginShow(); }
+  function beginShow(){ state='showing'; playIdx=0; playPhase=1; playTimer=0.4; lit=-1; syncUI(); }
+
+  function syncUI(){ ui.round.textContent=round; ui.best.textContent=best; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')){ h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); }
+    ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent = Snd.isMuted() ? '\u{1F507}' : '\u{1F50A}'; }
+  function startGame(){ newGame(); hideOverlay(); }
+
+  function lightPad(i, playSound){ lit=i; litTimer=ON; if(playSound) Snd.tone(PADS[i].tone, ON); }
+  function pressPad(i){
+    if(state!=='input') return;
+    lightPad(i, true);
+    if(seq[inputIdx]===i){
+      inputIdx++;
+      if(inputIdx>=seq.length){ // round cleared
+        state='between'; playTimer=0.6;
+        if(round>best){ best=round; saveBest(best); syncUI(); }
+      }
+    } else { fail(); }
+  }
+  function fail(){ state='over'; Snd.seq([64,59,52,45],0.13,'sawtooth',0.24); if(round-1>best){ /* round wasn't fully completed */ }
+    if(round>best){ best=round; saveBest(best); }
+    showOverlay('WRONG PAD','You reached round '+round,'Press Enter to play again'); syncUI(); }
+
+  function update(dt){
+    if(litTimer>0){ litTimer-=dt; if(litTimer<=0) lit=-1; }
+    if(state==='showing'){
+      playTimer-=dt;
+      if(playTimer<=0){
+        if(playPhase===1){ // turn a pad on
+          if(playIdx>=seq.length){ state='input'; inputIdx=0; return; }
+          lightPad(seq[playIdx], true); playPhase=2; playTimer=ON;
+        } else { // gap
+          lit=-1; playPhase=1; playTimer=OFF; playIdx++;
+        }
+      }
+    } else if(state==='between'){
+      playTimer-=dt; if(playTimer<=0){ addStep(); }
+    }
+  }
+
+  function draw(){
+    ctx.fillStyle='#0c1018'; ctx.fillRect(0,0,BW,BH);
+    var cx=BW/2, cy=BH/2, R=BW/2-8, ir=42;
+    var quads=[ [Math.PI, 1.5*Math.PI], [1.5*Math.PI, 2*Math.PI], [0.5*Math.PI, Math.PI], [0, 0.5*Math.PI] ];
+    for(var i=0;i<4;i++){
+      ctx.beginPath(); ctx.moveTo(cx,cy);
+      ctx.arc(cx,cy,R, quads[i][0], quads[i][1]); ctx.closePath();
+      ctx.fillStyle = (lit===i)? PADS[i].lit : PADS[i].base; ctx.fill();
+    }
+    // center hub
+    ctx.fillStyle='#141019'; ctx.beginPath(); ctx.arc(cx,cy,ir,0,7); ctx.fill();
+    ctx.fillStyle=(state==='input')?'#b06cff':(state==='showing'?'#8b8b9a':'#3a3550');
+    ctx.beginPath(); ctx.arc(cx,cy,ir-8,0,7); ctx.fill();
+    ctx.fillStyle='#f2f2ef'; ctx.font='700 16px system-ui,sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(String(round||''), cx, cy+1);
+  }
+  function quadAt(x,y){ var cx=BW/2, cy=BH/2, dx=x-cx, dy=y-cy;
+    if(dx*dx+dy*dy < 44*44) return -1;   // center hub
+    if(dx<0 && dy<0) return 0; if(dx>=0 && dy<0) return 1; if(dx<0 && dy>=0) return 2; return 3; }
+
+  var last=0;
+  function loop(t){ var dt=last?Math.min((t-last)/1000,0.05):0; last=t;
+    if(state==='showing'||state==='between'||state==='input') update(dt);
+    draw(); requestAnimationFrame(loop);
+  }
+
+  var KEYPAD={ Digit1:0, Digit2:1, Digit3:2, Digit4:3, ArrowUp:0, ArrowRight:1, ArrowLeft:2, ArrowDown:3 };
+  var HANDLED={Digit1:1,Digit2:1,Digit3:1,Digit4:1,ArrowUp:1,ArrowDown:1,ArrowLeft:1,ArrowRight:1,Enter:1,KeyM:1};
+  document.addEventListener('keydown', function(e){
+    if(HANDLED[e.code]) e.preventDefault();
+    if(e.code==='Enter'){ startGame(); return; }
+    if(e.code==='KeyM'){ Snd.toggle(); syncMute(); return; }
+    if(KEYPAD[e.code]!==undefined) pressPad(KEYPAD[e.code]);
+  });
+
+  canvas.addEventListener('pointerdown', function(e){
+    if(state==='ready'||state==='over'){ startGame(); return; }
+    var r=canvas.getBoundingClientRect(); var x=(e.clientX-r.left)/r.width*BW, y=(e.clientY-r.top)/r.height*BH;
+    var q=quadAt(x,y); if(q>=0) pressPad(q); e.preventDefault();
+  });
+
+  (function setupTouch(){
+    var muteBtn=document.getElementById('btnMute');
+    function tap(btn,fn){ btn.addEventListener('pointerdown',function(e){ e.preventDefault(); fn(); }); }
+    if(muteBtn) tap(muteBtn, function(){ Snd.toggle(); syncMute(); });
+    syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch')) return; document.body.classList.add('touch');
+      if(ui.ovH) ui.ovH.textContent = ui.ovH.textContent.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart' in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches);
+    if(isTouch) enableTouch();
+    window.addEventListener('touchstart', enableTouch, {passive:true, once:true});
+  })();
+
+  round=0; state='ready';
+  showOverlay('SIMON','Watch the pattern. Repeat it. Each round adds one.','Press Enter to start');
+  requestAnimationFrame(loop);
+
+  window.__simon = {
+    st:function(){ return state; }, round:function(){ return round; }, seq:function(){ return seq?seq.slice():[]; },
+    press:pressPad, hasAudio:!!Snd,
+    // advance the show phase deterministically then feed the correct sequence
+    tick:function(n,dt){ dt=dt||1/60; for(var i=0;i<n;i++) update(dt); },
+    playCorrect:function(){ if(state!=='input') return false; for(var i=0;i<seq.length;i++) pressPad(seq[i]); return true; }
+  };
+})();
+</script>
+</body>
+</html>

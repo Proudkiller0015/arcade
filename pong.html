@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Pong</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#46d5e8; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center;
+    background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg));
+    color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px}
+  .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#0c1018; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:170px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .row2{display:flex; gap:12px}
+  .row2 .stat{flex:1; padding:10px 8px; text-align:center}
+  .label{ display:block; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1}
+  .row2 .value{font-size:18px}
+  .keys{font-size:11px; color:var(--muted); line-height:1.9; padding:2px 4px}
+  .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; letter-spacing:.02em; margin-bottom:5px; }
+  .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none}
+  .overlay h2{margin:0 0 6px; font-size:26px; letter-spacing:-.01em}
+  .overlay p{margin:0; color:var(--muted); font-size:13px}
+  .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+
+  #touch{ display:none; width:100%; max-width:340px; box-sizing:border-box; touch-action:none; justify-content:center; }
+  .lr{ display:grid; grid-template-columns:1fr 1fr; gap:10px; width:100%; }
+  .tbtn{ -webkit-appearance:none; appearance:none; background:var(--panel); color:var(--text);
+    border:1px solid #2e2e40; border-radius:12px; height:60px; font-size:24px; line-height:1;
+    display:flex; align-items:center; justify-content:center; font-family:inherit; cursor:pointer; touch-action:none;
+    user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; }
+  .tbtn:active{ background:#23232f; border-color:var(--accent); transform:translateY(1px); }
+  #btnPause, #btnMute{ display:none; position:absolute; top:6px; z-index:2; padding:0; width:38px; height:38px;
+    border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text);
+    align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  #btnPause{ right:6px; } #btnMute{ left:6px; }
+  body.touch #touch{ display:flex; } body.touch #btnPause, body.touch #btnMute{ display:flex; }
+
+  @media (pointer: coarse), (max-width: 680px){
+    body{ display:block; min-height:100dvh; }
+    .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; }
+    .stage{ order:1; } #touch{ order:2; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; }
+    .panel .row2{ display:contents; }
+    .panel .stat{ flex:1 1 66px; min-width:66px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; }
+    .credit{ flex:1 1 100%; order:5; margin-top:2px; text-align:center; }
+    canvas#board{ width:94vw !important; height:auto !important; max-height:52vh; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnPause" type="button" tabindex="-1" aria-label="Pause">&#10074;&#10074;</button>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay">
+      <div>
+        <h2 id="ovTitle">PONG</h2>
+        <p id="ovSub">First to 7 beats the house.</p>
+        <p class="big" id="ovHint">Press Enter to start</p>
+      </div>
+    </div>
+  </div>
+  <aside class="panel">
+    <div class="row2">
+      <div class="stat"><span class="label">You</span><span class="value" id="uiYou">0</span></div>
+      <div class="stat"><span class="label">CPU</span><span class="value" id="uiCpu">0</span></div>
+    </div>
+    <div class="stat"><span class="label">Best rally</span><span class="value" id="uiBest">0</span></div>
+    <div class="keys">
+      <b>&uarr;</b><b>&darr;</b> move &nbsp; drag your side too<br>
+      <b>P</b> pause &nbsp; <b>Enter</b> restart<br>
+      The ball speeds up every time it's returned.
+    </div>
+    <div class="credit">
+      <span class="sig">&#128081; by Slime Queen</span>
+      An arcade toy for the Velvet Bunny Cabaret.
+      <span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is
+      recorded anywhere. All-original code and art. Provided as-is, for fun.</span>
+    </div>
+  </aside>
+
+  <div id="touch" aria-hidden="true">
+    <div class="lr">
+      <button class="tbtn" type="button" tabindex="-1" data-act="up"   aria-label="Up">&#9650;</button>
+      <button class="tbtn" type="button" tabindex="-1" data-act="down" aria-label="Down">&#9660;</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var Snd = (function(KEY){
+    var actx=null, master, muted=false, on=false, nextTime=0, mIdx=0, song=null;
+    try{ muted = localStorage.getItem(KEY)==='1'; }catch(e){}
+    function init(){ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return false; actx=new AC();
+      master=actx.createGain(); master.gain.value=muted?0:0.85; master.connect(actx.destination); return true; }
+    function ok(){ if(!actx && !init()) return false; if(actx.state==='suspended') actx.resume(); return true; }
+    function mf(m){ return 440*Math.pow(2,(m-69)/12); }
+    function t(f,at,dur,type,vol,f2){ var o=actx.createOscillator(),g=actx.createGain(); o.type=type||'square';
+      o.frequency.setValueAtTime(f,at); if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);
+      g.gain.setValueAtTime(0.0001,at); g.gain.exponentialRampToValueAtTime(vol,at+0.008); g.gain.setValueAtTime(vol,at+dur*0.6); g.gain.exponentialRampToValueAtTime(0.0001,at+dur);
+      o.connect(g); g.connect(master); o.start(at); o.stop(at+dur+0.02); }
+    return {
+      setSong:function(s){ song=s; },
+      start:function(){ if(!ok())return; on=true; mIdx=0; nextTime=actx.currentTime+0.08; },
+      resume:function(){ if(!ok())return; on=true; nextTime=actx.currentTime+0.05; },
+      stop:function(){ on=false; },
+      music:function(bpm){ if(!on||!actx||!song)return; var spb=60/bpm;
+        while(nextTime < actx.currentTime+0.3){ var n=song[mIdx]; if(n[0]){ t(mf(n[0]),nextTime,n[1]*spb*0.9,'triangle',0.12); } mIdx=(mIdx+1)%song.length; nextTime+=n[1]*spb; } },
+      toggle:function(){ muted=!muted; if(master)master.gain.value=muted?0:0.85; try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){} return muted; },
+      isMuted:function(){ return muted; },
+      sfx:function(f,dur,type,vol,f2){ if(ok()) t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2); },
+      seq:function(notes,step,type,vol){ if(!ok())return; var c=actx.currentTime; for(var i=0;i<notes.length;i++){ t(mf(notes[i]),c+i*step,step*0.9,type||'square',vol||0.2); } }
+    };
+  })('pong.muted');
+  Snd.setSong([[52,.5],[0,.5],[55,.5],[0,.5],[59,.5],[0,.5],[55,.5],[0,.5],
+               [57,.5],[0,.5],[60,.5],[0,.5],[64,.5],[0,.5],[60,.5],[0,.5]]);
+
+  var BW=480, BH=320;
+  function fit(cv,w,h){ var d=window.devicePixelRatio||1; cv.width=Math.round(w*d); cv.height=Math.round(h*d);
+    cv.style.width=w+'px'; cv.style.height=h+'px'; var c=cv.getContext('2d'); c.setTransform(d,0,0,d,0,0); return c; }
+  var canvas=document.getElementById('board');
+  var ctx=fit(canvas, BW, BH);
+
+  var ui={ you:document.getElementById('uiYou'), cpu:document.getElementById('uiCpu'), best:document.getElementById('uiBest'),
+    ov:document.getElementById('overlay'), ovT:document.getElementById('ovTitle'), ovS:document.getElementById('ovSub'), ovH:document.getElementById('ovHint') };
+
+  function loadBest(){ try { return parseInt(localStorage.getItem('pong.best'),10)||0; } catch(e){ return 0; } }
+  function saveBest(v){ try { localStorage.setItem('pong.best', String(v)); } catch(e){} }
+
+  var PADW=10, PADH=58, MARGIN=18, BALLR=6, WINSCORE=7;
+  var playerY, cpuY, ball, youScore, cpuScore, rally, bestRally=loadBest();
+  var state='ready', moveUp=false, moveDown=false, serveDir=1;
+
+  function centerPads(){ playerY=(BH-PADH)/2; cpuY=(BH-PADH)/2; }
+  function serve(dir){
+    ball={ x:BW/2, y:BH/2, spd:3.6, vx:0, vy:0 };
+    var ang=(Math.random()*0.5-0.25);
+    ball.vx=Math.cos(ang)*ball.spd*dir; ball.vy=Math.sin(ang)*ball.spd;
+    rally=0; syncUI();
+  }
+  function newGame(){ youScore=0; cpuScore=0; centerPads(); serveDir=(Math.random()<0.5?-1:1); serve(serveDir); syncUI(); }
+
+  function syncUI(){ ui.you.textContent=youScore; ui.cpu.textContent=cpuScore; ui.best.textContent=bestRally; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')){ h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again').replace('Press P to resume','Tap to resume'); }
+    ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent = Snd.isMuted() ? '\u{1F507}' : '\u{1F50A}'; }
+  function startGame(){ newGame(); hideOverlay(); state='playing'; Snd.start(); }
+  function togglePause(){ if(state==='playing'){ state='paused'; Snd.stop(); showOverlay('PAUSED','You '+youScore+'  ·  CPU '+cpuScore,'Press P to resume'); } else if(state==='paused'){ state='playing'; hideOverlay(); Snd.resume(); } }
+
+  function point(toCpu){
+    if(rally>bestRally){ bestRally=rally; saveBest(bestRally); }
+    if(toCpu){ cpuScore++; } else { youScore++; } syncUI();
+    Snd.sfx(toCpu?180:520,0.18, toCpu?'sawtooth':'square',0.2, toCpu?90:720);
+    if(youScore>=WINSCORE || cpuScore>=WINSCORE){ endMatch(); }
+    else { serveDir=toCpu?-1:1; serve(serveDir); }
+  }
+  function endMatch(){ state='over'; Snd.stop();
+    var won=youScore>cpuScore;
+    Snd.seq(won?[72,76,79,84]:[59,52,45,40],0.12, won?'triangle':'sawtooth',0.24);
+    showOverlay(won?'YOU WIN':'HOUSE WINS','You '+youScore+'  ·  CPU '+cpuScore,'Press Enter to play again'); syncUI();
+  }
+
+  function step(){
+    var SP=300/60; // per-step paddle speed (fixed step 1/60)
+    if(moveUp) playerY-=SP; if(moveDown) playerY+=SP;
+    if(playerY<0)playerY=0; if(playerY>BH-PADH)playerY=BH-PADH;
+    // CPU: track ball with capped speed and a little lag
+    var target=ball.y-PADH/2 + (ball.vx>0? (ball.y> cpuY+PADH/2?6:-6):0);
+    var cpuSpeed=2.6 + Math.min(1.6, (youScore-cpuScore)*0.25);   // rubber-band a touch
+    if(cpuY+PADH/2 < ball.y-4) cpuY+=Math.min(cpuSpeed, ball.y-(cpuY+PADH/2));
+    else if(cpuY+PADH/2 > ball.y+4) cpuY-=Math.min(cpuSpeed, (cpuY+PADH/2)-ball.y);
+    if(cpuY<0)cpuY=0; if(cpuY>BH-PADH)cpuY=BH-PADH;
+
+    ball.x+=ball.vx; ball.y+=ball.vy;
+    if(ball.y<BALLR){ ball.y=BALLR; ball.vy=Math.abs(ball.vy); Snd.sfx(300,0.03,'square',0.1); }
+    if(ball.y>BH-BALLR){ ball.y=BH-BALLR; ball.vy=-Math.abs(ball.vy); Snd.sfx(300,0.03,'square',0.1); }
+    // player paddle (left)
+    if(ball.vx<0 && ball.x-BALLR<=MARGIN+PADW && ball.x-BALLR>=MARGIN-4 && ball.y>=playerY && ball.y<=playerY+PADH){
+      bounce(playerY, 1);
+    }
+    // cpu paddle (right)
+    if(ball.vx>0 && ball.x+BALLR>=BW-MARGIN-PADW && ball.x+BALLR<=BW-MARGIN+4 && ball.y>=cpuY && ball.y<=cpuY+PADH){
+      bounce(cpuY, -1);
+    }
+    if(ball.x<-BALLR*2){ point(true); }          // ball got past YOUR paddle (left) -> CPU scores
+    else if(ball.x>BW+BALLR*2){ point(false); }  // ball got past the CPU (right) -> you score
+  }
+  function bounce(padTop, dir){
+    var hit=(ball.y-(padTop+PADH/2))/(PADH/2); hit=Math.max(-1,Math.min(1,hit));
+    ball.spd=Math.min(ball.spd+0.35, 9);
+    var ang=hit*(Math.PI/3.2);
+    ball.vx=Math.cos(ang)*ball.spd*dir; ball.vy=Math.sin(ang)*ball.spd;
+    ball.x += dir*2; rally++; syncUI();
+    Snd.sfx(dir>0?460:420,0.04,'square',0.16,640);
+  }
+
+  function draw(){
+    ctx.fillStyle='#0c1018'; ctx.fillRect(0,0,BW,BH);
+    ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.setLineDash([6,10]); ctx.lineWidth=2;
+    ctx.beginPath(); ctx.moveTo(BW/2,0); ctx.lineTo(BW/2,BH); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle='#46d5e8'; rr(MARGIN,playerY,PADW,PADH,4); ctx.fill();
+    ctx.fillStyle='#f2545b'; rr(BW-MARGIN-PADW,cpuY,PADW,PADH,4); ctx.fill();
+    ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(ball.x,ball.y,BALLR,0,7); ctx.fill();
+  }
+  function rr(x,y,w,h,rad){ ctx.beginPath(); if(ctx.roundRect){ ctx.roundRect(x,y,w,h,rad); } else { ctx.moveTo(x+rad,y); ctx.arcTo(x+w,y,x+w,y+h,rad); ctx.arcTo(x+w,y+h,x,y+h,rad); ctx.arcTo(x,y+h,x,y,rad); ctx.arcTo(x,y,x+w,y,rad); ctx.closePath(); } }
+
+  var last=0, acc=0, STEP=1/60;
+  function loop(t){
+    var dt=last?Math.min((t-last)/1000,0.05):0; last=t;
+    if(state==='playing'){ acc+=dt; var guard=0; while(acc>=STEP && guard<10){ acc-=STEP; step(); if(state!=='playing') break; guard++; } Snd.music(120); }
+    draw(); requestAnimationFrame(loop);
+  }
+
+  var HANDLED={ArrowUp:1,ArrowDown:1,KeyP:1,Enter:1,KeyW:1,KeyS:1,KeyM:1};
+  document.addEventListener('keydown', function(e){
+    if(HANDLED[e.code]) e.preventDefault();
+    if(e.code==='Enter'){ startGame(); return; }
+    if(e.code==='KeyP'){ togglePause(); return; }
+    if(e.code==='KeyM'){ Snd.toggle(); syncMute(); return; }
+    if(e.code==='ArrowUp'||e.code==='KeyW') moveUp=true;
+    else if(e.code==='ArrowDown'||e.code==='KeyS') moveDown=true;
+  });
+  document.addEventListener('keyup', function(e){
+    if(e.code==='ArrowUp'||e.code==='KeyW') moveUp=false;
+    else if(e.code==='ArrowDown'||e.code==='KeyS') moveDown=false;
+  });
+  window.addEventListener('blur', function(){ moveUp=moveDown=false; if(state==='playing'){ state='paused'; Snd.stop(); showOverlay('PAUSED','You '+youScore+'  ·  CPU '+cpuScore,'Press P to resume'); } });
+
+  // drag your paddle on the left half
+  var dragging=false;
+  function pointerY(clientY){ var r=canvas.getBoundingClientRect(); var rel=(clientY-r.top)/r.height*BH; playerY=rel-PADH/2; if(playerY<0)playerY=0; if(playerY>BH-PADH)playerY=BH-PADH; }
+  canvas.addEventListener('pointerdown', function(e){ if(state==='ready'||state==='over'){ startGame(); return; } if(state==='paused'){ togglePause(); return; } dragging=true; pointerY(e.clientY); e.preventDefault(); });
+  canvas.addEventListener('pointermove', function(e){ if(dragging&&state==='playing') pointerY(e.clientY); });
+  window.addEventListener('pointerup', function(){ dragging=false; });
+
+  (function setupTouch(){
+    var pad=document.getElementById('touch'), pauseBtn=document.getElementById('btnPause'), muteBtn=document.getElementById('btnMute');
+    function hold(btn,onDown,onUp){ btn.addEventListener('pointerdown',function(e){ e.preventDefault(); onDown(); });
+      btn.addEventListener('pointerup',function(e){ e.preventDefault(); onUp(); }); btn.addEventListener('pointerleave',function(){ onUp(); }); }
+    if(pad){ var bs=pad.querySelectorAll('.tbtn'); for(var i=0;i<bs.length;i++){ (function(b){ var a=b.getAttribute('data-act');
+      if(a==='up') hold(b,function(){moveUp=true;},function(){moveUp=false;});
+      if(a==='down') hold(b,function(){moveDown=true;},function(){moveDown=false;}); })(bs[i]); } }
+    function tap(btn,fn){ btn.addEventListener('pointerdown',function(e){ e.preventDefault(); fn(); }); }
+    if(pauseBtn) tap(pauseBtn, togglePause);
+    if(muteBtn) tap(muteBtn, function(){ Snd.toggle(); syncMute(); });
+    syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); if(state==='paused') togglePause(); else startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch')) return; document.body.classList.add('touch'); if(pad) pad.setAttribute('aria-hidden','false');
+      if(ui.ovH) ui.ovH.textContent = ui.ovH.textContent.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again').replace('Press P to resume','Tap to resume'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart' in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches);
+    if(isTouch) enableTouch();
+    window.addEventListener('touchstart', enableTouch, {passive:true, once:true});
+  })();
+
+  newGame(); state='ready';
+  showOverlay('PONG','First to 7 beats the house.','Press Enter to start');
+  requestAnimationFrame(loop);
+
+  window.__pong = {
+    st:function(){ return state; }, you:function(){ return youScore; }, cpu:function(){ return cpuScore; }, rally:function(){ return rally; },
+    ballPos:function(){ return Math.round(ball.x)+','+Math.round(ball.y); }, hasAudio:!!Snd,
+    setPad:function(y){ playerY=y; if(playerY<0)playerY=0; if(playerY>BH-PADH)playerY=BH-PADH; },
+    sim:function(n){ for(var i=0;i<n && state==='playing';i++){ step(); } }
+  };
+})();
+</script>
+</body>
+</html>
