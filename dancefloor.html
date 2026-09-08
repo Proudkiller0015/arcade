@@ -141,6 +141,10 @@
     { key:'glitch', name:'Glitch Storm', bpm:180, diffN:4,
       melody:[[72,.5],[75,.5],[72,.5],[70,.5],[72,.5],[75,.5],[77,.5],[75,.5],[72,.5],[70,.5],[68,.5],[70,.5],[72,.5],[75,.5],[79,.5],[75,.5]],
       bass:[[36,.5],[36,.5],[39,.5],[39,.5],[41,.5],[41,.5],[38,.5],[38,.5]] },
+    // HARD (not a boss) - a supplied track, pitch-mapped, moderate density, almost all
+    // singles: ~87% single, ~12% double, ~1% triple. Sits with the regular hard songs.
+    { key:'stronger', name:'Stronger Than You', mp3:'Stronger Than You (youtube).mp3', diffN:3,
+      dens:{ minGap:0.32, laneGap:0.12, thrMul:1.55, thrAdd:0.001, dist:{ dbl:0.12, tri:0.01 } } },
     // FINAL LEVEL - a real user-supplied track (Scarlet Devil arrangement). The chart is
     // auto-generated from the audio's own onsets at load, so arrows follow the real beats
     // for the whole song. Original chiptune everywhere else; this one track is a supplied file.
