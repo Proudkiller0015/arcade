@@ -155,24 +155,29 @@
   // bay x-centres (5 goals evenly placed)
   var BAY_X=[1,4,6,8,11];
 
+  // Evenly distribute exactly n entities around the loop so EVERY gap is identical
+  // (no wrap-seam irregularity) and the clear space is always >= clearTiles.
+  function makeLane(row, type, dir, speed, len, clearTiles){
+    var S = len + clearTiles*TILE;                 // desired centre-to-centre spacing
+    var n = Math.max(1, Math.floor(WRAP / S));     // how many fit
+    var spacing = WRAP / n;                        // exact even spacing (>= S, so clear >= clearTiles)
+    return { row:row, type:type, dir:dir, speed:speed, len:len, n:n, spacing:spacing, off:Math.random()*WRAP };
+  }
   function buildLanes(){
     lanes=[];
     // gentler base speed + slower ramp than before
     var carSpd=34 + (level-1)*7, logSpd=30 + (level-1)*5;
-    // river rows 1..5: LONG logs with a modest water gap (always easy to land on one)
+    // river rows 1..5: LONG logs (3-4 tiles) with a 2-tile water gap -> always a log to land on
     for(var r=1;r<=5;r++){
       var dir=(r%2===0)?1:-1;
-      var llen=TILE*(3+Math.floor(Math.random()*2));                    // 3-4 tiles long
-      lanes.push({ row:r, type:'log', dir:dir, speed:logSpd*(0.85+Math.random()*0.3),
-        len:llen, gap:llen + TILE*(2+Math.floor(Math.random()*2)), off:Math.random()*WRAP });  // + 2-3 tile water
+      var llen=TILE*(3+Math.floor(Math.random()*2));
+      lanes.push(makeLane(r,'log',dir, logSpd*(0.85+Math.random()*0.3), llen, 2));
     }
-    // road rows 7..11: SHORT cars, and the gap is always the car length plus a clear
-    // 3-4 tile standing space, so no lane is ever wall-to-wall (that made it unfair before)
+    // road rows 7..11: SHORT cars (1-2 tiles), clear standing gap ALWAYS >= 3 tiles
     for(r=7;r<=11;r++){
       dir=(r%2===0)?1:-1;
-      var clen=TILE*(1+Math.floor(Math.random()*2));                    // 1-2 tiles long
-      lanes.push({ row:r, type:'car', dir:dir, speed:carSpd*(0.85+Math.random()*0.35),
-        len:clen, gap:clen + TILE*(3+Math.floor(Math.random()*2)), off:Math.random()*WRAP });  // + 3-4 tile gap
+      var clen=TILE*(1+Math.floor(Math.random()*2));
+      lanes.push(makeLane(r,'car',dir, carSpd*(0.85+Math.random()*0.35), clen, 3));
     }
   }
   function laneAt(row){ for(var i=0;i<lanes.length;i++) if(lanes[i].row===row) return lanes[i]; return null; }
@@ -194,12 +199,13 @@
   function overAfterFlash(){ showOverlay('GAME OVER','Score '+score+'  ·  level '+level,'Press Enter to play again'); state='over'; syncUI(); }
   function win(){ state='over'; Snd.stop(); Snd.seq([72,76,79,84,88,91],0.1,'triangle',0.24); if(score>best){best=score;saveBest(best);} showOverlay('YOU FILLED EVERY BAY!','Score '+score,'Press Enter to play again'); }
 
-  // entity x-positions in a lane, computed continuously (wrap = no gaps/bugs)
+  // entity x-positions: exactly n entities, evenly spaced -> every gap identical
   function laneEntities(l){
-    var xs=[], base=l.dir>0 ? l.off : (WRAP-l.off);
-    for(var k=0; k*l.gap < WRAP; k++){
-      var x = (l.dir>0) ? ((k*l.gap + l.off) % WRAP) : (WRAP - ((k*l.gap + l.off) % WRAP) - l.len);
-      xs.push(x - TILE*2);   // shift so wrap region straddles the visible board
+    var xs=[];
+    for(var k=0; k<l.n; k++){
+      var raw = (k*l.spacing + l.off) % WRAP;
+      var x = (l.dir>0) ? raw : (WRAP - raw - l.len);
+      xs.push(x - TILE*2);   // shift so the wrap region straddles the visible board
     }
     return xs;
   }
