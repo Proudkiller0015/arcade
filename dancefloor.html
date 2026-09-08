@@ -146,8 +146,12 @@
     // for the whole song. Original chiptune everywhere else; this one track is a supplied file.
     // Hard-mode boss - a real supplied track, but a FAIR chart (much lower density than
     // the final): fewer, stronger onsets so a human can actually clear it.
-    { key:'dragon', name:'Dragon Warrior', mp3:'DragonWarrior.mp3', diffN:4, boss:true,
-      dens:{ minGap:0.48, laneGap:0.16, thrMul:1.75, thrAdd:0.0014, doubles:true } },   // ~2/s + occasional chords - beatable
+    { key:'dragon', name:'Dragon Warrior', mp3:'DragonWarrior.mp3', diffN:3, boss:true,
+      dens:{ minGap:0.48, laneGap:0.16, thrMul:1.75, thrAdd:0.0014, doubles:true } },   // MEDIUM boss (chart unchanged - the song itself is on the easy side)
+    // Hard boss - denser than Dragon, follows the melody closely, but still humanly clearable.
+    // Chords are 2-note max (never a 4-arrow slam).
+    { key:'coconut', name:'Coconut Mahyem', mp3:'Coconut Mahyem.mp3', diffN:4, boss:true,
+      dens:{ minGap:0.30, laneGap:0.11, thrMul:1.45, thrAdd:0.0008, doubles:true } },   // ~3/s, tracks the tune, beatable
     // True final boss - deliberately, comically hard (near-impossible), dense chart.
     { key:'scarlet', name:'Scarlet Devil', mp3:'ScarletDevil.mp3', diffN:5, final:true,
       dens:{ minGap:0.11, laneGap:0.10, thrMul:1.4, thrAdd:0.0005, doubles:true }, credit:'user-supplied fan arrangement' }
