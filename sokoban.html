@@ -63,14 +63,31 @@
       seq:function(n,s,type,vol){if(!ok())return;var c=actx.currentTime;for(var i=0;i<n.length;i++)t(mf(n[i]),c+i*s,s*0.9,type||'square',vol||0.2);}};
   })('sokoban.muted');
 
-  // # wall, ' ' floor, . target, $ box, * box-on-target, @ player, + player-on-target
-  var LEVELS=[
-    ["#######","#@$  .#","#######"],
-    ["######","#   .#","# $  #","#@   #","######"],
-    ["#######","#@$  .#","#     #","# $  .#","#######"],
-    ["######","#.   #","#  $ #","#   @#","######"],
-    ["########","#@ $  .#","#      #","#  $  .#","########"]
-  ];
+  // Levels are RANDOMLY GENERATED and always solvable: we start from a solved board
+  // (boxes on targets) and scramble by PULLING boxes with random player moves. Any
+  // state reachable by pulls can be solved by replaying those pulls as pushes.
+  function shuffle(a){ for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
+  function genLevel(idx){
+    var W=6+Math.min(4,Math.floor(idx/2)), H=5+Math.min(4,Math.floor(idx/2));   // interior grows with level
+    var nBoxes=2+Math.min(4,Math.floor(idx/1.5)), pulls=45+idx*20;
+    var cols=W+2, rows=H+2;
+    function floorOK(r,c){ return r>=1 && r<=H && c>=1 && c<=W; }
+    var cells=[]; for(var r=1;r<=H;r++) for(var c=1;c<=W;c++) cells.push([r,c]);
+    shuffle(cells);
+    var boxes={}, targets={}; for(var i=0;i<nBoxes;i++){ var k=key(cells[i][0],cells[i][1]); boxes[k]=1; targets[k]=1; }
+    var pr=cells[nBoxes][0], pc=cells[nBoxes][1];                                // player on a free cell
+    var DIRS=[[-1,0],[1,0],[0,-1],[0,1]];
+    for(var s=0;s<pulls;s++){
+      var ds=shuffle(DIRS.slice()), did=false, t;
+      for(t=0;t<4;t++){ var d=ds[t], br=pr+d[0], bc=pc+d[1], ar=pr-d[0], ac=pc-d[1];   // box ahead (+d), player pulls to -d
+        if(boxes[key(br,bc)] && floorOK(ar,ac) && !boxes[key(ar,ac)]){ delete boxes[key(br,bc)]; boxes[key(pr,pc)]=1; pr=ar; pc=ac; did=true; break; } }
+      if(!did){ for(t=0;t<4;t++){ var d2=ds[t], nr=pr+d2[0], nc=pc+d2[1]; if(floorOK(nr,nc) && !boxes[key(nr,nc)]){ pr=nr; pc=nc; break; } } }
+    }
+    var solved=true; for(var kk in targets){ if(!boxes[kk]){ solved=false; break; } }
+    if(solved) return genLevel(idx);                                            // never hand out a pre-solved board
+    var walls={}; for(r=0;r<rows;r++) for(c=0;c<cols;c++){ if(r===0||r===rows-1||c===0||c===cols-1) walls[key(r,c)]=1; }
+    return { cols:cols, rows:rows, walls:walls, targets:targets, boxes:boxes, pr:pr, pc:pc };
+  }
   var CANMAX=360;
   var canvas=document.getElementById('board'), ctx;
   function fitFor(cols,rows){ var CELL=Math.floor(Math.min(CANMAX/cols, CANMAX/rows)); var w=cols*CELL, h=rows*CELL;
@@ -79,17 +96,12 @@
   var ui={level:document.getElementById('uiLevel'),push:document.getElementById('uiPush'),
     ov:document.getElementById('overlay'),ovT:document.getElementById('ovTitle'),ovS:document.getElementById('ovSub'),ovH:document.getElementById('ovHint')};
 
-  var walls, targets, boxes, px, py, cols, rows, CELL, levelIdx, pushes, undo, state='ready';
+  var walls, targets, boxes, px, py, cols, rows, CELL, levelIdx, pushes, undo, state='ready', levelStart=null;
   function key(r,c){ return r+','+c; }
-  function loadLevel(idx){ var L=LEVELS[idx]; rows=L.length; cols=0; for(var i=0;i<rows;i++) cols=Math.max(cols,L[i].length);
-    CELL=fitFor(cols,rows); walls={}; targets={}; boxes={}; undo=[];
-    for(var r=0;r<rows;r++){ var line=L[r]; for(var c=0;c<line.length;c++){ var ch=line[c];
-      if(ch==='#') walls[key(r,c)]=1;
-      if(ch==='.'||ch==='*'||ch==='+') targets[key(r,c)]=1;
-      if(ch==='$'||ch==='*') boxes[key(r,c)]=1;
-      if(ch==='@'||ch==='+'){ py=r; px=c; } } }
-    pushes=0; syncUI(); }
-  function syncUI(){ ui.level.textContent=(levelIdx+1)+'/'+LEVELS.length; ui.push.textContent=pushes; }
+  function applyLevel(L){ cols=L.cols; rows=L.rows; CELL=fitFor(cols,rows); walls=L.walls; targets=L.targets;
+    boxes=JSON.parse(JSON.stringify(L.boxes)); py=L.pr; px=L.pc; pushes=0; undo=[]; syncUI(); }
+  function loadLevel(idx){ levelStart=genLevel(idx); applyLevel(levelStart); }
+  function syncUI(){ ui.level.textContent=(levelIdx+1); ui.push.textContent=pushes; }
   function showOverlay(t,s,h){ if(document.body.classList.contains('touch')) h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
   function hideOverlay(){ ui.ov.classList.add('hidden'); }
   function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
@@ -106,15 +118,15 @@
   }
   function checkWin(){ for(var k in targets){ if(!boxes[k]) return; } // all targets covered
     state='over'; Snd.seq([72,76,79,84,88],0.09,'triangle',0.24);
-    if(levelIdx<LEVELS.length-1){ setTimeout(function(){ levelIdx++; loadLevel(levelIdx); state='playing'; draw(); },700); showOverlayBrief('LEVEL '+(levelIdx+1)+' DONE'); }
-    else { showOverlay('ALL SOLVED!','You cleared every crate.','Press Enter to play again'); }
+    showOverlayBrief('LEVEL '+(levelIdx+1)+' DONE');   // endless: always roll a fresh random level
+    setTimeout(function(){ levelIdx++; loadLevel(levelIdx); state='playing'; draw(); },700);
   }
   var briefT=0;
   function showOverlayBrief(t){ /* momentary flash handled in draw via briefMsg */ briefMsg=t; briefT=0.7; }
   var briefMsg='';
 
   function doUndo(){ if(state==='playing'&&undo.length){ restore(undo.pop()); Snd.sfx(360,0.04,'square',0.1); } }
-  function doReset(){ if(state==='playing'||state==='over'){ loadLevel(levelIdx); state='playing'; draw(); Snd.sfx(300,0.05,'square',0.1); } }
+  function doReset(){ if((state==='playing'||state==='over')&&levelStart){ applyLevel(levelStart); state='playing'; draw(); Snd.sfx(300,0.05,'square',0.1); } }
 
   function draw(){ ctx.fillStyle='#0c1018'; ctx.fillRect(0,0,cols*CELL,rows*CELL);
     for(var r=0;r<rows;r++) for(var c=0;c<cols;c++){ var x=c*CELL, y=r*CELL, k=key(r,c);
