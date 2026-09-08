@@ -34,8 +34,18 @@
   .overlay p{margin:0; color:var(--muted); font-size:13px}
   .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
 
-  #touch{ display:none; width:100%; max-width:300px; box-sizing:border-box; touch-action:none; }
-  .dpad{ display:grid; grid-template-columns:repeat(3,1fr); grid-template-rows:repeat(3,1fr); gap:8px; width:100%; }
+  #touch{ display:none; width:100%; max-width:360px; box-sizing:border-box; touch-action:none; align-items:center; }
+  .dpad{ display:grid; grid-template-columns:repeat(3,52px); grid-template-rows:repeat(3,52px); gap:8px; }
+  .ba{ display:flex; flex-direction:column; gap:12px; }
+  .babtn{ -webkit-appearance:none; appearance:none; width:56px; height:56px; border-radius:50%;
+    background:var(--panel); border:1px solid #2e2e40; color:var(--accent); font-family:inherit; font-weight:700; font-size:20px;
+    display:flex; align-items:center; justify-content:center; cursor:pointer; touch-action:none;
+    -webkit-tap-highlight-color:transparent; -webkit-touch-callout:none; }
+  .babtn:active{ background:#23232f; border-color:var(--accent); transform:translateY(1px); }
+  .toast{ position:absolute; left:50%; bottom:14px; transform:translateX(-50%); max-width:90%;
+    background:#17171fe6; border:1px solid var(--accent); color:var(--text); border-radius:10px;
+    padding:8px 12px; font-size:12px; line-height:1.35; text-align:center; z-index:3; pointer-events:none;
+    transition:opacity .3s; }
   .tbtn{
     -webkit-appearance:none; appearance:none; background:var(--panel); color:var(--text);
     border:1px solid #2e2e40; border-radius:12px; height:56px; font-size:22px; line-height:1;
@@ -52,7 +62,7 @@
     -webkit-tap-highlight-color:transparent;
   }
   #btnPause{ right:6px; } #btnMute{ left:6px; }
-  body.touch #touch{ display:flex; justify-content:center; }
+  body.touch #touch{ display:flex; justify-content:space-between; margin:0 auto; }
   body.touch #btnPause, body.touch #btnMute{ display:flex; }
 
   @media (pointer: coarse), (max-width: 680px){
@@ -74,6 +84,7 @@
     <canvas id="board"></canvas>
     <button id="btnPause" type="button" tabindex="-1" aria-label="Pause">&#10074;&#10074;</button>
     <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="toast" class="toast" hidden></div>
     <div id="overlay" class="overlay">
       <div>
         <h2 id="ovTitle">PAC-MAN</h2>
@@ -112,6 +123,10 @@
       <button class="tbtn" type="button" tabindex="-1" data-act="left"  aria-label="Left">&#9664;</button>
       <button class="tbtn" type="button" tabindex="-1" data-act="down"  aria-label="Down">&#9660;</button>
       <button class="tbtn" type="button" tabindex="-1" data-act="right" aria-label="Right">&#9654;</button>
+    </div>
+    <div class="ba">
+      <button class="babtn" type="button" tabindex="-1" data-act="b" aria-label="B">B</button>
+      <button class="babtn" type="button" tabindex="-1" data-act="a" aria-label="A">A</button>
     </div>
   </div>
 </div>
@@ -223,6 +238,8 @@
     setCell(rows,10,7,'#'); setCell(rows,10,8,' '); setCell(rows,10,9,' '); setCell(rows,10,10,' '); setCell(rows,10,11,'#');
     setCell(rows,11,7,'#'); setCell(rows,11,8,' '); setCell(rows,11,9,' '); setCell(rows,11,10,' '); setCell(rows,11,11,'#');
     setCell(rows,12,7,'#'); setCell(rows,12,8,'#'); setCell(rows,12,9,'#'); setCell(rows,12,10,'#'); setCell(rows,12,11,'#');
+    // top<->bottom warp portals: open the border at the portal columns (5 & 13)
+    setCell(rows,0,5,'='); setCell(rows,0,13,'='); setCell(rows,21,5,'='); setCell(rows,21,13,'=');
     return rows;
   }
 
@@ -257,10 +274,12 @@
   function saveBest(v){ try { localStorage.setItem('pacman.best', String(v)); } catch(e){} }
   best = loadBest();
 
+  var VPORT = [5, 13];   // columns with top<->bottom warp portals (the "4 ways")
+  function isVport(c){ return c===5 || c===13; }
   function wallAt(c,r){
-    if(r<0||r>=ROWS) return true;
-    if(r===10||r===11){ c = (c+COLS)%COLS; }     // tunnel rows wrap
-    if(c<0||c>=COLS) return true;
+    if(r===10||r===11){ c = (c+COLS)%COLS; }      // side tunnel rows wrap horizontally
+    if(isVport(c)){ r = (r+ROWS)%ROWS; }          // portal columns wrap vertically
+    if(r<0||r>=ROWS || c<0||c>=COLS) return true;
     return maze[r].charAt(c) === '#';
   }
   function open(c,r){ return !wallAt(c,r); }
@@ -327,12 +346,14 @@
   function wrapPos(e){
     if(e.px < 0) e.px += COLS*TILE;
     else if(e.px >= COLS*TILE) e.px -= COLS*TILE;
+    if(e.py < 0) e.py += ROWS*TILE;               // vertical portal wrap (only reachable via a portal column)
+    else if(e.py >= ROWS*TILE) e.py -= ROWS*TILE;
   }
 
   function stepPac(){
     if(atCenter(pac)){
       var cell = cellOf(pac);
-      if(cell.c < 0 || cell.c >= COLS){ wrapPos(pac); cell = cellOf(pac); }
+      if(cell.c < 0 || cell.c >= COLS || cell.r < 0 || cell.r >= ROWS){ wrapPos(pac); cell = cellOf(pac); }
       // eat
       if(dots[cell.r] && dots[cell.r][cell.c]){
         if(dots[cell.r][cell.c] === 2){ score += 50; enterFright(); Snd.sfx(520,0.25,'square',0.2,760); }
@@ -357,20 +378,21 @@
     while(head < q.length){
       var cur = q[head++], c = cur[0], r = cur[1];
       for(var i=0;i<4;i++){
-        var nc = c+dd[i][0], nr = r+dd[i][1];
-        if(nr < 0 || nr >= ROWS) continue;
-        var wc = (nr===10||nr===11) ? ((nc+COLS)%COLS) : nc;
-        if(wc < 0 || wc >= COLS || !open(wc,nr)) continue;
-        var k = wc+','+nr; if(seen[k]) continue;
+        var nc = c+dd[i][0], nr = r+dd[i][1], wc = nc, wr = nr;
+        if(nr===10||nr===11) wc = (nc+COLS)%COLS;          // side tunnel wrap
+        if(wc===5||wc===13) wr = (nr+ROWS)%ROWS;           // vertical portal wrap
+        if(wc < 0 || wc >= COLS || wr < 0 || wr >= ROWS || !open(wc,wr)) continue;
+        var k = wc+','+wr; if(seen[k]) continue;
         seen[k] = 1; prev[k] = c+','+r;
-        if(wc === tc && nr === tr){
+        if(wc === tc && wr === tr){
           var ck = k;
           while(prev[ck] !== start) ck = prev[ck];
           var p = ck.split(','), fc = +p[0], fr = +p[1], dx = fc-sc, dy = fr-sr;
-          if(dx > 1) dx = -1; else if(dx < -1) dx = 1;    // normalise a tunnel-wrap first step
+          if(dx > 1) dx = -1; else if(dx < -1) dx = 1;    // normalise a wrap first step
+          if(dy > 1) dy = -1; else if(dy < -1) dy = 1;
           return { x: (dx>0?1:dx<0?-1:0), y: (dy>0?1:dy<0?-1:0) };
         }
-        q.push([wc,nr]);
+        q.push([wc,wr]);
       }
     }
     return {x:0,y:0};
@@ -398,9 +420,16 @@
     return d2 > 64 ? { c:p.c, r:p.r } : g.scatter;
   }
 
+  // toroidal cell distance (accounts for the side tunnels and the top/bottom
+  // portals) so ghosts treat a wrap-around as the short way and use it to cut you off
+  function toroid(a, b, span){ var d = Math.abs(a-b); return Math.min(d, span-d); }
+  function cellDist(nc, nr, tc, tr){
+    var dx = toroid(nc, tc, COLS), dy = toroid(nr, tr, ROWS);
+    return dx*dx + dy*dy;
+  }
   function chooseGhostDir(g, gi){
     var cell = cellOf(g);
-    if(cell.c < 0 || cell.c >= COLS){ wrapPos(g); cell = cellOf(g); }
+    if(cell.c < 0 || cell.c >= COLS || cell.r < 0 || cell.r >= ROWS){ wrapPos(g); cell = cellOf(g); }
     var opts = [], k, names = ['up','left','down','right'];
     for(k=0;k<names.length;k++){
       var d = DIRS[names[k]];
@@ -413,14 +442,21 @@
       g.dir = opts[Math.floor(Math.random()*opts.length)];
       return;
     }
-    var t = ghostTarget(g, gi), bestD = 1e9, bestDir = opts[0];
-    for(k=0;k<opts.length;k++){
-      var nc = cell.c + opts[k].x, nr = cell.r + opts[k].y;
-      var dd = (nc-t.c)*(nc-t.c) + (nr-t.r)*(nr-t.r);
-      if(dd < bestD){ bestD = dd; bestDir = opts[k]; }
+    // Anti-orbit: prefer options that do NOT revisit a recently-seen cell. If a
+    // ghost is circling, its recent cells fill the trail and it's forced to break out.
+    g.trail = g.trail || [];
+    var fresh = [];
+    for(k=0;k<opts.length;k++){ var fc = ((cell.c+opts[k].x)+COLS)%COLS, fr = ((cell.r+opts[k].y)+ROWS)%ROWS;
+      if(g.trail.indexOf(fc+','+fr) < 0) fresh.push(opts[k]); }
+    var pool = fresh.length ? fresh : opts;
+    var t = ghostTarget(g, gi), bestD = 1e18, bestDir = pool[0];
+    for(k=0;k<pool.length;k++){
+      var nc = cell.c + pool[k].x, nr = cell.r + pool[k].y;
+      var dd = cellDist(nc, nr, t.c, t.r);
+      if(dd < bestD){ bestD = dd; bestDir = pool[k]; }
     }
-    // small random turn at junctions so ghosts can't lock into a perfect loop
-    if(opts.length > 1 && Math.random() < 0.12) bestDir = opts[Math.floor(Math.random()*opts.length)];
+    if(pool.length > 1 && Math.random() < 0.10) bestDir = pool[Math.floor(Math.random()*pool.length)];
+    g.trail.push(cell.c + ',' + cell.r); if(g.trail.length > 10) g.trail.shift();
     g.dir = bestDir;
   }
 
@@ -536,16 +572,34 @@
   // Konami code -> instantly clear the current maze. (Shared cheat; other games later.)
   var KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','KeyB','KeyA'];
   var konamiIdx = 0;
+  // Returns true if this keypress COMPLETED the code (and cleared the stage).
   function konami(code){
-    if(code === KONAMI[konamiIdx]){ konamiIdx++; if(konamiIdx === KONAMI.length){ konamiIdx = 0; cheatClearStage(); } }
+    if(code === KONAMI[konamiIdx]){ konamiIdx++; if(konamiIdx === KONAMI.length){ konamiIdx = 0; cheatClearStage(); return true; } }
     else konamiIdx = (code === KONAMI[0]) ? 1 : 0;
+    return false;
   }
   function cheatClearStage(){
+    if(state === 'paused'){ hideOverlay(); state = 'playing'; Snd.resume(); bgmPlay(false); }
     if(state !== 'playing') return;
     for(var r=0;r<ROWS;r++) for(var c=0;c<COLS;c++) dots[r][c] = 0;
     dotsLeft = 0;
     Snd.seq([76,79,84,88,91],0.07,'square',0.22);
     winLevel();
+  }
+  var REFS = [
+    '↑↑↓↓←→←→ B A — 30 lives. Contra says hi.',
+    'A winner is you.',
+    'It’s dangerous to go alone. Take this maze.',
+    'The cake, sadly, is a lie.',
+    'Do a barrel roll!',
+    'All your base are belong to the Slime Queen.',
+    'Would you kindly eat one more dot?'
+  ];
+  function showRef(){
+    var el = document.getElementById('toast'); if(!el) return;
+    el.textContent = REFS[Math.floor(Math.random()*REFS.length)];
+    el.hidden = false; el.style.opacity = '1';
+    clearTimeout(el.__t); el.__t = setTimeout(function(){ el.style.opacity='0'; setTimeout(function(){ el.hidden = true; }, 320); }, 2400);
   }
 
   function startGame(){ reset(); hideOverlay(); state = 'playing'; Snd.start(); bgmPlay(true); }
@@ -664,14 +718,21 @@
       var btns = pad.querySelectorAll('.tbtn');
       for(var i=0;i<btns.length;i++){
         (function(b){
-          var a = b.getAttribute('data-act'); if(!a) return;
-          tap(b, function(){ if(DIRS[a]) setWant(DIRS[a]); });
+          var a = b.getAttribute('data-act'); if(!a || !DIRS[a]) return;
+          var code = 'Arrow' + a.charAt(0).toUpperCase() + a.slice(1);   // up->ArrowUp, etc.
+          tap(b, function(){ setWant(DIRS[a]); konami(code); });         // arrows also feed the code on mobile
         })(btns[i]);
       }
     }
     if(pauseBtn) tap(pauseBtn, togglePause);
     var muteBtn = document.getElementById('btnMute');
     if(muteBtn) tap(muteBtn, function(){ Snd.toggle(); syncMute(); });
+    // B and A: feed the Konami code (D-pad supplies the arrows). B shows a ref;
+    // A pauses - unless it just completed the code (then it clears the stage).
+    var bBtn = pad && pad.querySelector('[data-act="b"]');
+    var aBtn = pad && pad.querySelector('[data-act="a"]');
+    if(bBtn) tap(bBtn, function(){ konami('KeyB'); showRef(); });
+    if(aBtn) tap(aBtn, function(){ if(!konami('KeyA')) togglePause(); });
     syncMute();
     ui.ov.addEventListener('pointerdown', function(e){
       e.preventDefault();
