@@ -150,7 +150,7 @@
     // for the whole song. Original chiptune everywhere else; this one track is a supplied file.
     // Hard-mode boss - a real supplied track, but a FAIR chart (much lower density than
     // the final): fewer, stronger onsets so a human can actually clear it.
-    { key:'dragon', name:'Dragon Warrior', mp3:'DragonWarrior.mp3', diffN:3, boss:true,
+    { key:'dragon', name:'Dragon Warrior', mp3:'DragonWarrior.mp3', diffN:2, boss:true,
       dens:{ minGap:0.48, laneGap:0.16, thrMul:1.75, thrAdd:0.0014, doubles:true } },   // MEDIUM boss (chart unchanged - the song itself is on the easy side)
     // Hard boss - denser than Dragon, follows the melody closely, but still humanly clearable.
     // Chords are 2-note max (never a 4-arrow slam).
@@ -158,7 +158,7 @@
       dens:{ minGap:0.30, laneGap:0.11, thrMul:1.45, thrAdd:0.0008, doubles:true } },   // ~3/s, tracks the tune, beatable
     // Hard boss - mostly single notes on pitch, with a measured chord mix:
     // ~80% singles, ~15% doubles, ~5% triples on the loudest song peaks (never a 4-slam).
-    { key:'gourmet', name:'Gourmet Race', mp3:'Gourmet Race.mp3', diffN:4, boss:true,
+    { key:'gourmet', name:'Gourmet Race', mp3:'Gourmet Race.mp3', diffN:3, boss:true,
       dens:{ minGap:0.30, laneGap:0.11, thrMul:1.45, thrAdd:0.0008, dist:{ dbl:0.15, tri:0.05 } } },
     // HARDCORE boss - ~6 hits/sec, follows the notes as tightly as possible, same 80/15/5
     // single/double/triple mix as Gourmet, and a full 4-arrow SLAM on the final note.
@@ -223,10 +223,15 @@
 
   function buildSongList(){
     ui.songList.innerHTML='';
-    SONGS.forEach(function(sg){ var b=document.createElement('button'); b.type='button'; b.className='songbtn'; b.tabIndex=-1;
+    // Order: by difficulty tier, and within a tier the built-in chiptune tracks first,
+    // then the custom (mp3) tracks at the bottom of that category. Stable otherwise.
+    var ordered=SONGS.map(function(s,i){ return {s:s,i:i}; }).sort(function(a,b){
+      return (a.s.diffN-b.s.diffN) || ((a.s.mp3?1:0)-(b.s.mp3?1:0)) || (a.i-b.i); });
+    ordered.forEach(function(e){ var sg=e.s; var b=document.createElement('button'); b.type='button'; b.className='songbtn'; b.tabIndex=-1;
+      var meta = DIFF_NAME[sg.diffN] + (sg.bpm? ' · '+sg.bpm+' BPM' : '') + ' · best '+loadBest(sg.key);
       b.innerHTML='<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:'+DIFF_COL[sg.diffN]+';margin-right:7px"></span>'+
-                  '<b>'+sg.name+'</b> <small>'+DIFF_NAME[sg.diffN]+' · '+sg.bpm+' BPM · best '+loadBest(sg.key)+'</small>';
-      b.addEventListener('pointerdown',function(e){ e.preventDefault(); startSong(sg); });
+                  '<b>'+sg.name+'</b> <small>'+meta+'</small>';
+      b.addEventListener('pointerdown',function(ev){ ev.preventDefault(); startSong(sg); });
       ui.songList.appendChild(b);
     });
   }
