@@ -77,7 +77,7 @@
     <div id="overlay" class="overlay">
       <div>
         <h2 id="ovTitle">PAC-MAN</h2>
-        <p id="ovSub">Eat every dot. Five mazes. Mind the ghosts.</p>
+        <p id="ovSub">Eat every dot. 20 mazes. Mind the ghosts.</p>
         <p class="big" id="ovHint">Press Enter to start</p>
       </div>
     </div>
@@ -174,15 +174,33 @@
      [0,0,0,0],[1,1,1,1],[0,0,0,0],[1,1,1,1],[0,0,0,0],[1,1,1,1],[0,0,0,0],[1,1,1,1]]
   ];
 
-  // Per-maze difficulty + palette. Ghosts get faster (higher skip = fewer skipped
-  // ticks = closer to full speed) and the power-pellet scare gets shorter each maze.
-  var LEVELCFG = [
-    { skip:4,   fright:8, w1:'#1330a8', w2:'#2a54ee', dot:'#ffd7a8', pow:'#fff2c0' },
-    { skip:5,   fright:7, w1:'#0e7a5f', w2:'#1cc48c', dot:'#c8ffe6', pow:'#e8fff4' },
-    { skip:7,   fright:6, w1:'#8a1e6e', w2:'#e23bb0', dot:'#ffd0f0', pow:'#ffe4f7' },
-    { skip:11,  fright:5, w1:'#8a5a10', w2:'#f0a028', dot:'#ffe9b8', pow:'#fff4d8' },
-    { skip:999, fright:4, w1:'#7a1420', w2:'#e2434f', dot:'#ffcccc', pow:'#ffe0e0' }
+  // 20 mazes total: the 5 hand-authored ones above, then 15 more generated from a
+  // seeded PRNG. Every maze stays fully connected because the vertical highways are
+  // always open, so any band pattern is valid. Symmetric (A=D, B=C) for a clean look.
+  (function(){
+    function prng(seed){ return function(){ seed|=0; seed=seed+0x6D2B79F5|0; var t=Math.imul(seed^seed>>>15,1|seed); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+    for(var i=5;i<20;i++){ var rnd=prng(i*99991+7), rows=[];
+      for(var r=0;r<16;r++){ var a=rnd()<0.5?1:0, b=rnd()<0.5?1:0; rows.push([a,b,b,a]); }
+      LAYOUTS.push(rows);
+    }
+  })();
+
+  // Per-maze palette (cycled) + a difficulty ramp across all 20 mazes: ghosts get
+  // faster (higher skip = fewer skipped ticks) and the power-pellet scare shortens.
+  var PALETTES = [
+    { w1:'#1330a8', w2:'#2a54ee', dot:'#ffd7a8', pow:'#fff2c0' },
+    { w1:'#0e7a5f', w2:'#1cc48c', dot:'#c8ffe6', pow:'#e8fff4' },
+    { w1:'#8a1e6e', w2:'#e23bb0', dot:'#ffd0f0', pow:'#ffe4f7' },
+    { w1:'#8a5a10', w2:'#f0a028', dot:'#ffe9b8', pow:'#fff4d8' },
+    { w1:'#7a1420', w2:'#e2434f', dot:'#ffcccc', pow:'#ffe0e0' },
+    { w1:'#3a2b7a', w2:'#7b5cff', dot:'#e0d6ff', pow:'#f2ecff' }
   ];
+  var SKIPS = [4,4,5,5,6,6,7,8,9,10,12,14,16,20,26,999,999,999,999,999];
+  function levelCfg(idx){
+    var p = PALETTES[idx % PALETTES.length];
+    return { skip: SKIPS[Math.min(SKIPS.length-1, idx)], fright: Math.max(3, 8 - Math.floor(idx/3)),
+             w1:p.w1, w2:p.w2, dot:p.dot, pow:p.pow };
+  }
   var cfg;
 
   function band(f){ return f ? '###' : '...'; }
@@ -246,15 +264,18 @@
     return maze[r].charAt(c) === '#';
   }
   function open(c,r){ return !wallAt(c,r); }
-  // Pac may not enter the ghost house (rows 9-12, cols 7-11) - the door is for ghosts only.
-  function openForPac(c,r){ if(wallAt(c,r)) return false; return !(r>=9 && r<=12 && c>=7 && c<=11); }
+  // The ghost house / door region. Off-limits to Pac AND to live (normal/fright)
+  // ghosts - only "eyes" heading home and ghosts in the scripted "leaving" exit
+  // may pass the door, so a live ghost can never wander back in and loop.
+  function inPen(c,r){ return r>=9 && r<=12 && c>=7 && c<=11; }
+  function openForPac(c,r){ return !wallAt(c,r) && !inPen(c,r); }
 
   function cx(c){ return c*TILE + TILE/2; }
   function cyy(r){ return r*TILE + TILE/2; }
 
   function loadLevel(idx){
     levelIdx = idx;
-    cfg = LEVELCFG[idx];
+    cfg = levelCfg(idx);
     maze = buildMaze(idx);
     dots = []; dotsLeft = 0;
     for(var r=0;r<ROWS;r++){
@@ -295,7 +316,7 @@
   function syncUI(){
     ui.score.textContent = score;
     ui.best.textContent = best;
-    ui.level.textContent = (levelIdx+1) + '/5';
+    ui.level.textContent = (levelIdx+1) + '/' + LAYOUTS.length;
     ui.lives.textContent = lives;
   }
 
@@ -384,7 +405,8 @@
     for(k=0;k<names.length;k++){
       var d = DIRS[names[k]];
       if(d.x === -g.dir.x && d.y === -g.dir.y) continue;      // no reversing
-      if(open(cell.c + d.x, cell.r + d.y)) opts.push(d);
+      var nc2 = cell.c + d.x, nr2 = cell.r + d.y;
+      if(open(nc2, nr2) && !inPen(nc2, nr2)) opts.push(d);    // live ghosts never re-enter the pen
     }
     if(!opts.length) opts.push({x:-g.dir.x, y:-g.dir.y});      // dead end: turn back
     if(g.mode === 'fright'){
@@ -484,7 +506,7 @@
       // cleared all five
       state = 'win';
       if(score > best){ best = score; saveBest(best); }
-      showOverlay('ALL 5 CLEARED', 'Score ' + score, 'Press Enter to play again');
+      showOverlay('ALL ' + LAYOUTS.length + ' CLEARED', 'Score ' + score, 'Press Enter to play again');
       return;
     }
     loadLevel(next); syncUI();
@@ -672,7 +694,7 @@
 
   reset();
   state = 'ready';
-  showOverlay('PAC-MAN', 'Eat every dot. Five mazes. Mind the ghosts.', 'Press Enter to start');
+  showOverlay('PAC-MAN', 'Eat every dot. 20 mazes. Mind the ghosts.', 'Press Enter to start');
   requestAnimationFrame(loop);
 
   // expose a tiny hook for the automated self-check
