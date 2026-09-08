@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Tic-Tac-Toe</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#6ce0ff; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg)); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px} .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#0c1018; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:172px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .row3{display:flex; gap:8px} .row3 .stat{flex:1; padding:10px 4px; text-align:center}
+  .label{ display:block; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:20px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1}
+  .keys{font-size:11px; color:var(--muted); line-height:1.8; padding:2px 4px} .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; margin-bottom:5px; } .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none} .overlay h2{margin:0 0 6px; font-size:24px} .overlay p{margin:0; color:var(--muted); font-size:13px} .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+  #btnMute{ display:none; position:absolute; top:6px; left:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; }
+  body.touch #btnMute{ display:flex; }
+  @media (pointer: coarse), (max-width: 680px){ body{ display:block; min-height:100dvh; } .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; } .stage{ order:1; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; } .panel .row3{ display:contents; } .panel .stat{ flex:1 1 66px; min-width:66px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; } .credit{ flex:1 1 100%; order:5; text-align:center; } canvas#board{ width:80vw !important; height:auto !important; max-width:360px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay"><div><h2 id="ovTitle">TIC-TAC-TOE</h2><p id="ovSub">You're X. Beat the house O.</p><p class="big" id="ovHint">Press Enter to start</p></div></div>
+  </div>
+  <aside class="panel">
+    <div class="row3"><div class="stat"><span class="label">Won</span><span class="value" id="uiW">0</span></div><div class="stat"><span class="label">Lost</span><span class="value" id="uiL">0</span></div><div class="stat"><span class="label">Drew</span><span class="value" id="uiD">0</span></div></div>
+    <div class="stat"><span class="label">Turn</span><span class="value" id="uiTurn" style="font-size:15px">Your move</span></div>
+    <div class="keys">Tap a square to place your X.<br>The house plays a sharp game &mdash; a draw is a good result.<br><b>Enter</b> new game.</div>
+    <div class="credit"><span class="sig">&#128081; by Slime Queen</span>An arcade toy for the Velvet Bunny Cabaret.<span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is recorded anywhere. All-original code and art. Provided as-is, for fun.</span></div>
+  </aside>
+</div>
+<script>
+(function(){
+  'use strict';
+  var Snd=(function(KEY){var actx=null,master,muted=false;try{muted=localStorage.getItem(KEY)==='1';}catch(e){}
+    function init(){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;actx=new AC();master=actx.createGain();master.gain.value=muted?0:0.85;master.connect(actx.destination);return true;}
+    function ok(){if(!actx&&!init())return false;if(actx.state==='suspended')actx.resume();return true;}
+    function mf(m){return 440*Math.pow(2,(m-69)/12);}
+    function t(f,at,dur,type,vol,f2){var o=actx.createOscillator(),g=actx.createGain();o.type=type||'square';o.frequency.setValueAtTime(f,at);if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);g.gain.setValueAtTime(0.0001,at);g.gain.exponentialRampToValueAtTime(vol,at+0.008);g.gain.setValueAtTime(vol,at+dur*0.6);g.gain.exponentialRampToValueAtTime(0.0001,at+dur);o.connect(g);g.connect(master);o.start(at);o.stop(at+dur+0.02);}
+    return {toggle:function(){muted=!muted;if(master)master.gain.value=muted?0:0.85;try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){}return muted;},isMuted:function(){return muted;},
+      sfx:function(f,dur,type,vol,f2){if(ok())t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2);},
+      seq:function(n,s,type,vol){if(!ok())return;var c=actx.currentTime;for(var i=0;i<n.length;i++)t(mf(n[i]),c+i*s,s*0.9,type||'square',vol||0.2);}};
+  })('tictactoe.muted');
+
+  var BW=300, BH=300, CELL=100;
+  function fit(cv,w,h){var d=window.devicePixelRatio||1;cv.width=Math.round(w*d);cv.height=Math.round(h*d);cv.style.width=w+'px';cv.style.height=h+'px';var c=cv.getContext('2d');c.setTransform(d,0,0,d,0,0);return c;}
+  var canvas=document.getElementById('board'), ctx=fit(canvas,BW,BH);
+  var ui={w:document.getElementById('uiW'),l:document.getElementById('uiL'),d:document.getElementById('uiD'),turn:document.getElementById('uiTurn'),
+    ov:document.getElementById('overlay'),ovT:document.getElementById('ovTitle'),ovS:document.getElementById('ovSub'),ovH:document.getElementById('ovHint')};
+  function loadRec(){try{return JSON.parse(localStorage.getItem('tictactoe.rec'))||{w:0,l:0,d:0};}catch(e){return {w:0,l:0,d:0};}}
+  function saveRec(){try{localStorage.setItem('tictactoe.rec',JSON.stringify(rec));}catch(e){}}
+
+  var board, state='ready', rec=loadRec(), turn='X', winLine=null, cpuT=0;
+  var WINS=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+  function newGame(){ board=[0,0,0,0,0,0,0,0,0]; turn='X'; winLine=null; cpuT=0; syncUI(); }
+  function syncUI(){ ui.w.textContent=rec.w; ui.l.textContent=rec.l; ui.d.textContent=rec.d; ui.turn.textContent = state==='playing'?(turn==='X'?'Your move':'House…'):'—'; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')) h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
+  function startGame(){ newGame(); hideOverlay(); state='playing'; syncUI(); draw(); }
+
+  function winnerOf(b){ for(var i=0;i<WINS.length;i++){ var w=WINS[i]; if(b[w[0]]&&b[w[0]]===b[w[1]]&&b[w[1]]===b[w[2]]) return {who:b[w[0]],line:w}; } if(b.every(function(v){return v;})) return {who:'draw'}; return null; }
+  function place(i,who){ board[i]=who; Snd.sfx(who==='X'?560:400,0.05,'square',0.16,who==='X'?740:520); }
+
+  function endIf(){ var r=winnerOf(board); if(!r) return false; state='over';
+    if(r.who==='draw'){ rec.d++; showOverlay('DRAW','Nobody blinked.','Press Enter to play again'); }
+    else if(r.who==='X'){ rec.w++; winLine=r.line; Snd.seq([72,76,79,84],0.09,'triangle',0.24); showOverlay('YOU WIN','Nicely played.','Press Enter to play again'); }
+    else { rec.l++; winLine=r.line; Snd.seq([59,52,45],0.12,'sawtooth',0.22); showOverlay('HOUSE WINS','Try again.','Press Enter to play again'); }
+    saveRec(); syncUI(); draw(); return true;
+  }
+  // minimax for O
+  function minimax(b,player){ var r=winnerOf(b);
+    if(r){ if(r.who==='O') return {score:10}; if(r.who==='X') return {score:-10}; return {score:0}; }
+    var best=null;
+    for(var i=0;i<9;i++){ if(b[i]) continue; b[i]=player; var res=minimax(b, player==='O'?'X':'O'); b[i]=0;
+      var sc=res.score; if(player==='O'){ if(!best||sc>best.score) best={score:sc,move:i}; } else { if(!best||sc<best.score) best={score:sc,move:i}; } }
+    return best;
+  }
+  function cpuMove(){ var m=minimax(board.slice(),'O'); if(m&&m.move!=null){ place(m.move,'O'); } turn='X'; if(!endIf()){ syncUI(); draw(); } }
+  function playerTap(i){ if(state!=='playing'||turn!=='X'||board[i]) return; place(i,'X'); if(endIf()) return; turn='O'; cpuT=0.35; syncUI(); draw(); }
+
+  function draw(){ ctx.fillStyle='#0c1018'; ctx.fillRect(0,0,BW,BH);
+    ctx.strokeStyle='#2e2e40'; ctx.lineWidth=3; for(var i=1;i<3;i++){ ctx.beginPath(); ctx.moveTo(i*CELL,10); ctx.lineTo(i*CELL,BH-10); ctx.stroke(); ctx.beginPath(); ctx.moveTo(10,i*CELL); ctx.lineTo(BW-10,i*CELL); ctx.stroke(); }
+    for(i=0;i<9;i++){ var r=Math.floor(i/3), c=i%3, cx=c*CELL+CELL/2, cy=r*CELL+CELL/2;
+      if(board[i]==='X'){ ctx.strokeStyle='#6ce0ff'; ctx.lineWidth=7; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(cx-22,cy-22); ctx.lineTo(cx+22,cy+22); ctx.moveTo(cx+22,cy-22); ctx.lineTo(cx-22,cy+22); ctx.stroke(); }
+      else if(board[i]==='O'){ ctx.strokeStyle='#ff9f43'; ctx.lineWidth=7; ctx.beginPath(); ctx.arc(cx,cy,24,0,7); ctx.stroke(); } }
+    if(winLine){ var a=winLine[0], b2=winLine[2]; var ax=(a%3)*CELL+CELL/2, ay=Math.floor(a/3)*CELL+CELL/2, bx=(b2%3)*CELL+CELL/2, by=Math.floor(b2/3)*CELL+CELL/2;
+      ctx.strokeStyle='#f2f2ef'; ctx.lineWidth=5; ctx.beginPath(); ctx.moveTo(ax,ay); ctx.lineTo(bx,by); ctx.stroke(); }
+  }
+  var last=0; function loop(t){ var dt=last?Math.min((t-last)/1000,0.05):0; last=t; if(state==='playing'&&turn==='O'&&cpuT>0){ cpuT-=dt; if(cpuT<=0) cpuMove(); } requestAnimationFrame(loop); }
+
+  document.addEventListener('keydown',function(e){ if(e.code==='Enter'){ e.preventDefault(); startGame(); } else if(e.code==='KeyM'){ Snd.toggle(); syncMute(); } });
+  canvas.addEventListener('pointerdown',function(e){ if(state==='ready'||state==='over'){ startGame(); return; } var r=canvas.getBoundingClientRect(); var c=Math.floor((e.clientX-r.left)/r.width*3), rr2=Math.floor((e.clientY-r.top)/r.height*3); if(c>=0&&c<3&&rr2>=0&&rr2<3) playerTap(rr2*3+c); e.preventDefault(); });
+  (function setupTouch(){ var muteBtn=document.getElementById('btnMute'); if(muteBtn) muteBtn.addEventListener('pointerdown',function(e){ e.preventDefault(); Snd.toggle(); syncMute(); }); syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(ui.ovH) ui.ovH.textContent=ui.ovH.textContent.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart'in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches); if(isTouch) enableTouch(); window.addEventListener('touchstart',enableTouch,{passive:true,once:true});
+  })();
+  newGame(); state='ready'; draw(); syncUI(); showOverlay('TIC-TAC-TOE',"You're X. Beat the house O.",'Press Enter to start'); requestAnimationFrame(loop);
+  window.__ttt={ st:function(){return state;}, board:function(){return board.slice();}, turn:function(){return turn;}, rec:function(){return {w:rec.w,l:rec.l,d:rec.d};},
+    tap:playerTap, cpuNow:function(){ if(turn==='O') cpuMove(); }, hasAudio:!!Snd };
+})();
+</script>
+</body>
+</html>

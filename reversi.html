@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Reversi</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#5ad469; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg)); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px} .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#13351f; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:172px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .row2{display:flex; gap:12px} .row2 .stat{flex:1; padding:10px 8px; text-align:center}
+  .label{ display:block; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1} .row2 .value{font-size:18px}
+  .keys{font-size:11px; color:var(--muted); line-height:1.8; padding:2px 4px} .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; margin-bottom:5px; } .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none} .overlay h2{margin:0 0 6px; font-size:24px} .overlay p{margin:0; color:var(--muted); font-size:13px} .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+  #btnMute{ display:none; position:absolute; top:6px; left:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; }
+  body.touch #btnMute{ display:flex; }
+  @media (pointer: coarse), (max-width: 680px){ body{ display:block; min-height:100dvh; } .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; } .stage{ order:1; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; } .panel .row2{ display:contents; } .panel .stat{ flex:1 1 74px; min-width:74px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; } .credit{ flex:1 1 100%; order:5; text-align:center; } canvas#board{ width:92vw !important; height:auto !important; max-width:420px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay"><div><h2 id="ovTitle">REVERSI</h2><p id="ovSub">You're black. Own the most discs.</p><p class="big" id="ovHint">Press Enter to start</p></div></div>
+  </div>
+  <aside class="panel">
+    <div class="row2"><div class="stat"><span class="label">You (black)</span><span class="value" id="uiB">2</span></div><div class="stat"><span class="label">House (white)</span><span class="value" id="uiW">2</span></div></div>
+    <div class="stat"><span class="label">Turn</span><span class="value" id="uiTurn" style="font-size:15px">Your move</span></div>
+    <div class="keys">Tap a highlighted square to place a disc and flip the trapped line.<br>Corners are gold. <b>Enter</b> new game.</div>
+    <div class="credit"><span class="sig">&#128081; by Slime Queen</span>An arcade toy for the Velvet Bunny Cabaret.<span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is recorded anywhere. All-original code and art. Provided as-is, for fun.</span></div>
+  </aside>
+</div>
+<script>
+(function(){
+  'use strict';
+  var Snd=(function(KEY){var actx=null,master,muted=false;try{muted=localStorage.getItem(KEY)==='1';}catch(e){}
+    function init(){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;actx=new AC();master=actx.createGain();master.gain.value=muted?0:0.85;master.connect(actx.destination);return true;}
+    function ok(){if(!actx&&!init())return false;if(actx.state==='suspended')actx.resume();return true;}
+    function mf(m){return 440*Math.pow(2,(m-69)/12);}
+    function t(f,at,dur,type,vol,f2){var o=actx.createOscillator(),g=actx.createGain();o.type=type||'square';o.frequency.setValueAtTime(f,at);if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);g.gain.setValueAtTime(0.0001,at);g.gain.exponentialRampToValueAtTime(vol,at+0.008);g.gain.setValueAtTime(vol,at+dur*0.6);g.gain.exponentialRampToValueAtTime(0.0001,at+dur);o.connect(g);g.connect(master);o.start(at);o.stop(at+dur+0.02);}
+    return {toggle:function(){muted=!muted;if(master)master.gain.value=muted?0:0.85;try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){}return muted;},isMuted:function(){return muted;},
+      sfx:function(f,dur,type,vol,f2){if(ok())t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2);},
+      seq:function(n,s,type,vol){if(!ok())return;var c=actx.currentTime;for(var i=0;i<n.length;i++)t(mf(n[i]),c+i*s,s*0.9,type||'square',vol||0.2);}};
+  })('reversi.muted');
+
+  var N=8, CELL=48, PAD=6, BW=N*CELL+PAD*2, BH=N*CELL+PAD*2;
+  function fit(cv,w,h){var d=window.devicePixelRatio||1;cv.width=Math.round(w*d);cv.height=Math.round(h*d);cv.style.width=w+'px';cv.style.height=h+'px';var c=cv.getContext('2d');c.setTransform(d,0,0,d,0,0);return c;}
+  var canvas=document.getElementById('board'), ctx=fit(canvas,BW,BH);
+  var ui={b:document.getElementById('uiB'),w:document.getElementById('uiW'),turn:document.getElementById('uiTurn'),
+    ov:document.getElementById('overlay'),ovT:document.getElementById('ovTitle'),ovS:document.getElementById('ovSub'),ovH:document.getElementById('ovHint')};
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
+
+  // 0 empty, 1 black(player), 2 white(cpu)
+  var board, state='ready', turn=1, cpuT=0, legal=[];
+  var WEIGHT=[ [120,-20,20,5,5,20,-20,120],[-20,-40,-5,-5,-5,-5,-40,-20],[20,-5,15,3,3,15,-5,20],[5,-5,3,3,3,3,-5,5],
+               [5,-5,3,3,3,3,-5,5],[20,-5,15,3,3,15,-5,20],[-20,-40,-5,-5,-5,-5,-40,-20],[120,-20,20,5,5,20,-20,120] ];
+  var DIRS=[[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+
+  function newGame(){ board=[]; for(var r=0;r<N;r++){ board.push([]); for(var c=0;c<N;c++) board[r].push(0); }
+    board[3][3]=2; board[3][4]=1; board[4][3]=1; board[4][4]=2; turn=1; cpuT=0; recomputeLegal(); syncUI(); }
+  function flipsFor(b,r,c,who){ if(b[r][c]) return []; var opp=who===1?2:1, all=[];
+    for(var d=0;d<8;d++){ var line=[]; var nr=r+DIRS[d][0], nc=c+DIRS[d][1];
+      while(nr>=0&&nr<N&&nc>=0&&nc<N&&b[nr][nc]===opp){ line.push([nr,nc]); nr+=DIRS[d][0]; nc+=DIRS[d][1]; }
+      if(line.length&&nr>=0&&nr<N&&nc>=0&&nc<N&&b[nr][nc]===who) all=all.concat(line); }
+    return all; }
+  function movesFor(b,who){ var m=[]; for(var r=0;r<N;r++) for(var c=0;c<N;c++){ if(flipsFor(b,r,c,who).length) m.push([r,c]); } return m; }
+  function applyMove(b,r,c,who){ var f=flipsFor(b,r,c,who); if(!f.length) return false; b[r][c]=who; for(var i=0;i<f.length;i++) b[f[i][0]][f[i][1]]=who; return true; }
+  function recomputeLegal(){ legal = turn===1 ? movesFor(board,1) : []; }
+  function counts(){ var bl=0,wh=0; for(var r=0;r<N;r++) for(var c=0;c<N;c++){ if(board[r][c]===1)bl++; else if(board[r][c]===2)wh++; } return {bl:bl,wh:wh}; }
+  function syncUI(){ var cn=counts(); ui.b.textContent=cn.bl; ui.w.textContent=cn.wh; ui.turn.textContent= state==='playing'?(turn===1?'Your move':'House…'):'—'; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')) h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function startGame(){ newGame(); hideOverlay(); state='playing'; syncUI(); draw(); }
+
+  function evalBoard(b){ var s=0; for(var r=0;r<N;r++) for(var c=0;c<N;c++){ if(b[r][c]===2) s+=WEIGHT[r][c]; else if(b[r][c]===1) s-=WEIGHT[r][c]; }
+    s += (movesFor(b,2).length - movesFor(b,1).length)*3; return s; }
+  function cloneB(b){ return b.map(function(r){return r.slice();}); }
+  function cpuChoose(){ var moves=movesFor(board,2); if(!moves.length) return null; var best=moves[0], bestv=-1e9;
+    for(var i=0;i<moves.length;i++){ var b=cloneB(board); applyMove(b,moves[i][0],moves[i][1],2);
+      // 1-ply reply: opponent best reduces our eval
+      var reply=movesFor(b,1), worst=1e9;
+      if(!reply.length){ worst=evalBoard(b); } else { for(var j=0;j<reply.length;j++){ var b2=cloneB(b); applyMove(b2,reply[j][0],reply[j][1],1); var e=evalBoard(b2); if(e<worst) worst=e; } }
+      if(worst>bestv){ bestv=worst; best=moves[i]; } }
+    return best; }
+
+  function nextTurn(){
+    var pMoves=movesFor(board,1), cMoves=movesFor(board,2);
+    if(!pMoves.length && !cMoves.length){ endGame(); return; }
+    if(turn===1 && !pMoves.length){ turn=2; cpuT=0.35; } // player passes
+    else if(turn===2 && !cMoves.length){ turn=1; }        // cpu passes
+    recomputeLegal(); syncUI(); draw();
+    if(turn===2){ cpuT=0.4; }
+  }
+  function endGame(){ state='over'; var cn=counts(); var msg = cn.bl>cn.wh?'YOU WIN':(cn.wh>cn.bl?'HOUSE WINS':'DRAW');
+    Snd.seq(cn.bl>=cn.wh?[72,76,79,84]:[59,52,45],0.1, cn.bl>=cn.wh?'triangle':'sawtooth',0.22);
+    showOverlay(msg, cn.bl+' – '+cn.wh, 'Press Enter to play again'); recomputeLegal(); syncUI(); draw(); }
+  function playerMove(r,c){ if(state!=='playing'||turn!==1) return; if(!applyMove(board,r,c,1)) return; Snd.sfx(560,0.05,'square',0.16,720); turn=2; recomputeLegal(); syncUI(); draw();
+    var cn=counts(); if(cn.bl+cn.wh===64){ endGame(); return; } cpuT=0.4; }
+  function cpuMove(){ var m=cpuChoose(); if(m){ applyMove(board,m[0],m[1],2); Snd.sfx(400,0.05,'square',0.16,520); } turn=1; recomputeLegal(); syncUI(); draw();
+    // handle pass chains
+    var pMoves=movesFor(board,1), cMoves=movesFor(board,2);
+    if(!pMoves.length && !cMoves.length){ endGame(); return; }
+    if(!pMoves.length){ turn=2; cpuT=0.4; recomputeLegal(); }
+  }
+
+  function draw(){ ctx.fillStyle='#13351f'; ctx.fillRect(0,0,BW,BH);
+    ctx.strokeStyle='rgba(0,0,0,0.4)'; ctx.lineWidth=1;
+    for(var i=0;i<=N;i++){ ctx.beginPath(); ctx.moveTo(PAD+i*CELL,PAD); ctx.lineTo(PAD+i*CELL,PAD+N*CELL); ctx.stroke(); ctx.beginPath(); ctx.moveTo(PAD,PAD+i*CELL); ctx.lineTo(PAD+N*CELL,PAD+i*CELL); ctx.stroke(); }
+    for(var r=0;r<N;r++) for(var c=0;c<N;c++){ var cx=PAD+c*CELL+CELL/2, cy=PAD+r*CELL+CELL/2, v=board[r][c];
+      if(v){ ctx.fillStyle=v===1?'#111':'#f2f2ef'; ctx.beginPath(); ctx.arc(cx,cy,CELL*0.38,0,7); ctx.fill(); ctx.fillStyle='rgba(255,255,255,0.14)'; ctx.beginPath(); ctx.arc(cx-4,cy-4,CELL*0.14,0,7); ctx.fill(); } }
+    if(state==='playing'&&turn===1){ for(i=0;i<legal.length;i++){ var lr=legal[i][0], lc=legal[i][1]; ctx.fillStyle='rgba(90,212,105,0.5)'; ctx.beginPath(); ctx.arc(PAD+lc*CELL+CELL/2,PAD+lr*CELL+CELL/2,6,0,7); ctx.fill(); } }
+    // corner accents
+    ctx.strokeStyle='rgba(255,213,74,0.4)'; ctx.lineWidth=2; [[0,0],[0,7],[7,0],[7,7]].forEach(function(p){ ctx.strokeRect(PAD+p[1]*CELL+3,PAD+p[0]*CELL+3,CELL-6,CELL-6); });
+  }
+  var last=0; function loop(t){ var dt=last?Math.min((t-last)/1000,0.05):0; last=t; if(state==='playing'&&turn===2&&cpuT>0){ cpuT-=dt; if(cpuT<=0) cpuMove(); } requestAnimationFrame(loop); }
+
+  document.addEventListener('keydown',function(e){ if(e.code==='Enter'){ e.preventDefault(); startGame(); } else if(e.code==='KeyM'){ Snd.toggle(); syncMute(); } });
+  canvas.addEventListener('pointerdown',function(e){ if(state==='ready'||state==='over'){ startGame(); return; } var r=canvas.getBoundingClientRect(); var c=Math.floor((e.clientX-r.left)/r.width*BW/CELL), rr2=Math.floor((e.clientY-r.top)/r.height*BH/CELL);
+    c=Math.floor(((e.clientX-r.left)/r.width*BW-PAD)/CELL); rr2=Math.floor(((e.clientY-r.top)/r.height*BH-PAD)/CELL); if(c>=0&&c<N&&rr2>=0&&rr2<N) playerMove(rr2,c); e.preventDefault(); });
+  (function setupTouch(){ var muteBtn=document.getElementById('btnMute'); if(muteBtn) muteBtn.addEventListener('pointerdown',function(e){ e.preventDefault(); Snd.toggle(); syncMute(); }); syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(ui.ovH) ui.ovH.textContent=ui.ovH.textContent.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart'in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches); if(isTouch) enableTouch(); window.addEventListener('touchstart',enableTouch,{passive:true,once:true});
+  })();
+  newGame(); state='ready'; draw(); syncUI(); showOverlay('REVERSI',"You're black. Own the most discs.",'Press Enter to start'); requestAnimationFrame(loop);
+  window.__reversi={ st:function(){return state;}, turn:function(){return turn;}, counts:counts, legalCount:function(){return movesFor(board,turn).length;},
+    move:playerMove, cpuNow:function(){ if(turn===2) cpuMove(); }, hasAudio:!!Snd };
+})();
+</script>
+</body>
+</html>

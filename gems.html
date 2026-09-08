@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Gems</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#5ad0ff; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg)); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px} .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#0c1018; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:172px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .row2{display:flex; gap:12px} .row2 .stat{flex:1; padding:10px 8px; text-align:center}
+  .label{ display:block; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1} .row2 .value{font-size:18px}
+  .keys{font-size:11px; color:var(--muted); line-height:1.8; padding:2px 4px} .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; margin-bottom:5px; } .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none} .overlay h2{margin:0 0 6px; font-size:24px} .overlay p{margin:0; color:var(--muted); font-size:13px} .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+  #btnMute{ display:none; position:absolute; top:6px; left:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; }
+  body.touch #btnMute{ display:flex; }
+  @media (pointer: coarse), (max-width: 680px){ body{ display:block; min-height:100dvh; } .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; } .stage{ order:1; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; } .panel .row2{ display:contents; } .panel .stat{ flex:1 1 74px; min-width:74px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; } .credit{ flex:1 1 100%; order:5; text-align:center; } canvas#board{ width:92vw !important; height:auto !important; max-width:420px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay"><div><h2 id="ovTitle">GEMS</h2><p id="ovSub">Swap to line up three. 60 seconds.</p><p class="big" id="ovHint">Press Enter to start</p></div></div>
+  </div>
+  <aside class="panel">
+    <div class="row2"><div class="stat"><span class="label">Score</span><span class="value" id="uiScore">0</span></div><div class="stat"><span class="label">Time</span><span class="value" id="uiTime">60</span></div></div>
+    <div class="stat"><span class="label">Best</span><span class="value" id="uiBest">0</span></div>
+    <div class="keys">Tap a gem, then a neighbour to swap.<br>Line up 3+ to clear them. Cascades score big.<br><b>Enter</b> restart.</div>
+    <div class="credit"><span class="sig">&#128081; by Slime Queen</span>An arcade toy for the Velvet Bunny Cabaret.<span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is recorded anywhere. All-original code and art. Provided as-is, for fun.</span></div>
+  </aside>
+</div>
+<script>
+(function(){
+  'use strict';
+  var Snd=(function(KEY){var actx=null,master,muted=false;try{muted=localStorage.getItem(KEY)==='1';}catch(e){}
+    function init(){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;actx=new AC();master=actx.createGain();master.gain.value=muted?0:0.85;master.connect(actx.destination);return true;}
+    function ok(){if(!actx&&!init())return false;if(actx.state==='suspended')actx.resume();return true;}
+    function mf(m){return 440*Math.pow(2,(m-69)/12);}
+    function t(f,at,dur,type,vol,f2){var o=actx.createOscillator(),g=actx.createGain();o.type=type||'square';o.frequency.setValueAtTime(f,at);if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);g.gain.setValueAtTime(0.0001,at);g.gain.exponentialRampToValueAtTime(vol,at+0.008);g.gain.setValueAtTime(vol,at+dur*0.6);g.gain.exponentialRampToValueAtTime(0.0001,at+dur);o.connect(g);g.connect(master);o.start(at);o.stop(at+dur+0.02);}
+    return {toggle:function(){muted=!muted;if(master)master.gain.value=muted?0:0.85;try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){}return muted;},isMuted:function(){return muted;},
+      sfx:function(f,dur,type,vol,f2){if(ok())t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2);},
+      seq:function(n,s,type,vol){if(!ok())return;var c=actx.currentTime;for(var i=0;i<n.length;i++)t(mf(n[i]),c+i*s,s*0.9,type||'square',vol||0.2);}};
+  })('gems.muted');
+
+  var N=8, CELL=46, PAD=6, NC=6, BW=N*CELL+PAD*2, BH=N*CELL+PAD*2;
+  var COLORS=['#f2545b','#ff9f43','#ffd54a','#5ad469','#46d5e8','#b06cff'];
+  function fit(cv,w,h){var d=window.devicePixelRatio||1;cv.width=Math.round(w*d);cv.height=Math.round(h*d);cv.style.width=w+'px';cv.style.height=h+'px';var c=cv.getContext('2d');c.setTransform(d,0,0,d,0,0);return c;}
+  var canvas=document.getElementById('board'), ctx=fit(canvas,BW,BH);
+  var ui={score:document.getElementById('uiScore'),time:document.getElementById('uiTime'),best:document.getElementById('uiBest'),
+    ov:document.getElementById('overlay'),ovT:document.getElementById('ovTitle'),ovS:document.getElementById('ovSub'),ovH:document.getElementById('ovHint')};
+  function loadBest(){try{return parseInt(localStorage.getItem('gems.best'),10)||0;}catch(e){return 0;}}
+  function saveBest(v){try{localStorage.setItem('gems.best',String(v));}catch(e){}}
+
+  var grid, score, best=loadBest(), timeLeft, state='ready', sel=null;
+  function rndGem(){ return Math.floor(Math.random()*NC); }
+  function newBoard(){ grid=[]; for(var r=0;r<N;r++){ grid.push([]); for(var c=0;c<N;c++) grid[r].push(rndGem()); }
+    // remove initial matches
+    var guard=0; while(findMatches().length && guard<200){ var m=findMatches(); for(var i=0;i<m.length;i++) grid[m[i][0]][m[i][1]]=rndGem(); guard++; }
+    if(!hasMove()) reshuffle();
+  }
+  function newGame(){ newBoard(); score=0; timeLeft=60; sel=null; syncUI(); }
+  function findMatches(){ var marks={};
+    for(var r=0;r<N;r++){ var run=1; for(var c=1;c<=N;c++){ if(c<N && grid[r][c]===grid[r][c-1]){ run++; } else { if(run>=3) for(var k=1;k<=run;k++) marks[r+','+(c-k)]=1; run=1; } } }
+    for(c=0;c<N;c++){ run=1; for(r=1;r<=N;r++){ if(r<N && grid[r][c]===grid[r-1][c]){ run++; } else { if(run>=3) for(k=1;k<=run;k++) marks[(r-k)+','+c]=1; run=1; } } }
+    return Object.keys(marks).map(function(s){ var p=s.split(','); return [+p[0],+p[1]]; });
+  }
+  function resolve(){ var chain=0, total=0;
+    while(true){ var m=findMatches(); if(!m.length) break; chain++;
+      for(var i=0;i<m.length;i++) grid[m[i][0]][m[i][1]]=-1;
+      total += m.length*10*chain;
+      // gravity
+      for(var c=0;c<N;c++){ var col=[]; for(var r=N-1;r>=0;r--) if(grid[r][c]>=0) col.push(grid[r][c]);
+        for(r=N-1;r>=0;r--){ grid[r][c] = col.length? col.shift() : rndGem(); } // fill from top with new
+      }
+      // note: the above fills bottom-up from surviving then new at top-ish; ensure top gets fresh
+      Snd.sfx(500+chain*60,0.05,'square',0.16,760+chain*80);
+    }
+    if(total>0){ score+=total; syncUI(); }
+    if(!hasMove()) reshuffle();
+    return total;
+  }
+  function reshuffle(){ var guard=0; do{ var flat=[]; for(var r=0;r<N;r++)for(var c=0;c<N;c++) flat.push(grid[r][c]);
+      for(var i=flat.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=flat[i]; flat[i]=flat[j]; flat[j]=t; }
+      var idx=0; for(r=0;r<N;r++)for(c=0;c<N;c++) grid[r][c]=flat[idx++]; guard++; } while((findMatches().length||!hasMove())&&guard<50); }
+  function wouldMatch(r1,c1,r2,c2){ var t=grid[r1][c1]; grid[r1][c1]=grid[r2][c2]; grid[r2][c2]=t; var m=findMatches().length>0; t=grid[r1][c1]; grid[r1][c1]=grid[r2][c2]; grid[r2][c2]=t; return m; }
+  function hasMove(){ for(var r=0;r<N;r++) for(var c=0;c<N;c++){ if(c<N-1 && wouldMatch(r,c,r,c+1)) return true; if(r<N-1 && wouldMatch(r,c,r+1,c)) return true; } return false; }
+
+  function syncUI(){ ui.score.textContent=score; ui.time.textContent=Math.ceil(timeLeft); ui.best.textContent=best; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')) h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
+  function startGame(){ newGame(); hideOverlay(); state='playing'; draw(); }
+  function endGame(){ state='over'; if(score>best){best=score;saveBest(best);} Snd.seq([72,67,64,60],0.12,'triangle',0.22); syncUI(); showOverlay('TIME!','You scored '+score,'Press Enter to play again'); }
+
+  function trySwap(r1,c1,r2,c2){ if(state!=='playing') return; if(Math.abs(r1-r2)+Math.abs(c1-c2)!==1) return;
+    var t=grid[r1][c1]; grid[r1][c1]=grid[r2][c2]; grid[r2][c2]=t;
+    if(findMatches().length){ Snd.sfx(620,0.05,'square',0.14,760); resolve(); }
+    else { t=grid[r1][c1]; grid[r1][c1]=grid[r2][c2]; grid[r2][c2]=t; Snd.sfx(240,0.05,'square',0.1); }
+    sel=null; draw();
+  }
+  function tapCell(r,c){ if(state!=='playing') return; if(!sel){ sel=[r,c]; }
+    else if(sel[0]===r&&sel[1]===c){ sel=null; }
+    else if(Math.abs(sel[0]-r)+Math.abs(sel[1]-c)===1){ trySwap(sel[0],sel[1],r,c); }
+    else { sel=[r,c]; } draw();
+  }
+
+  function draw(){ ctx.fillStyle='#0c1018'; ctx.fillRect(0,0,BW,BH);
+    for(var r=0;r<N;r++) for(var c=0;c<N;c++){ var x=PAD+c*CELL, y=PAD+r*CELL, g=grid[r][c]; if(g<0) continue;
+      ctx.fillStyle=COLORS[g]; var cx=x+CELL/2, cy=y+CELL/2, R=CELL*0.34;
+      ctx.beginPath(); ctx.moveTo(cx,cy-R); ctx.lineTo(cx+R,cy); ctx.lineTo(cx,cy+R); ctx.lineTo(cx-R,cy); ctx.closePath(); ctx.fill();
+      ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.beginPath(); ctx.moveTo(cx,cy-R); ctx.lineTo(cx+R*0.5,cy-R*0.1); ctx.lineTo(cx,cy); ctx.closePath(); ctx.fill();
+    }
+    if(sel){ var sx=PAD+sel[1]*CELL, sy=PAD+sel[0]*CELL; ctx.strokeStyle='#fff'; ctx.lineWidth=3; rr(sx+2,sy+2,CELL-4,CELL-4,7); ctx.stroke(); }
+  }
+  function rr(x,y,w,h,rad){ctx.beginPath();if(ctx.roundRect){ctx.roundRect(x,y,w,h,rad);}else{ctx.moveTo(x+rad,y);ctx.arcTo(x+w,y,x+w,y+h,rad);ctx.arcTo(x+w,y+h,x,y+h,rad);ctx.arcTo(x,y+h,x,y,rad);ctx.arcTo(x,y,x+w,y,rad);ctx.closePath();}}
+  var last=0; function loop(t){ var dt=last?Math.min((t-last)/1000,0.05):0; last=t; if(state==='playing'){ timeLeft-=dt; if(timeLeft<=0){ timeLeft=0; endGame(); } else ui.time.textContent=Math.ceil(timeLeft); } requestAnimationFrame(loop); }
+
+  document.addEventListener('keydown',function(e){ if(e.code==='Enter'){ e.preventDefault(); startGame(); } else if(e.code==='KeyM'){ Snd.toggle(); syncMute(); } });
+  canvas.addEventListener('pointerdown',function(e){ if(state==='ready'||state==='over'){ startGame(); return; } var r=canvas.getBoundingClientRect(); var c=Math.floor(((e.clientX-r.left)/r.width*BW-PAD)/CELL), rr2=Math.floor(((e.clientY-r.top)/r.height*BH-PAD)/CELL); if(c>=0&&c<N&&rr2>=0&&rr2<N) tapCell(rr2,c); e.preventDefault(); });
+  (function setupTouch(){ var muteBtn=document.getElementById('btnMute'); if(muteBtn) muteBtn.addEventListener('pointerdown',function(e){ e.preventDefault(); Snd.toggle(); syncMute(); }); syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(ui.ovH) ui.ovH.textContent=ui.ovH.textContent.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart'in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches); if(isTouch) enableTouch(); window.addEventListener('touchstart',enableTouch,{passive:true,once:true});
+  })();
+  newGame(); state='ready'; draw(); showOverlay('GEMS','Swap to line up three. 60 seconds.','Press Enter to start'); requestAnimationFrame(loop);
+  window.__gems={ st:function(){return state;}, score:function(){return score;}, time:function(){return timeLeft;}, matches:function(){return findMatches().length;}, hasMove:hasMove,
+    swap:function(r1,c1,r2,c2){trySwap(r1,c1,r2,c2);}, hasAudio:!!Snd };
+})();
+</script>
+</body>
+</html>

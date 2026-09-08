@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Hangman</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#5ad469; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg)); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px} .stage{position:relative; display:flex; flex-direction:column; gap:10px; align-items:center}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#0c1018; }
+  #kbd{ display:grid; grid-template-columns:repeat(9,1fr); gap:5px; width:340px; }
+  #kbd button{ background:var(--panel); color:var(--text); border:1px solid #2e2e40; border-radius:7px; height:34px; font-family:inherit; font-size:14px; cursor:pointer; padding:0; -webkit-tap-highlight-color:transparent; }
+  #kbd button.good{ background:#1d3a24; border-color:#5ad469; color:#5ad469; } #kbd button.bad{ background:#3a1d1f; border-color:#e05a5a; color:#e05a5a; }
+  #kbd button:disabled{ cursor:default; opacity:.9; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:172px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .row2{display:flex; gap:12px} .row2 .stat{flex:1; padding:10px 8px; text-align:center}
+  .label{ display:block; font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1} .row2 .value{font-size:18px}
+  .keys{font-size:11px; color:var(--muted); line-height:1.8; padding:2px 4px} .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; margin-bottom:5px; } .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none} .overlay h2{margin:0 0 6px; font-size:24px} .overlay p{margin:0; color:var(--muted); font-size:13px} .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+  #btnMute{ display:none; position:absolute; top:6px; left:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; }
+  body.touch #btnMute{ display:flex; }
+  @media (pointer: coarse), (max-width: 680px){ body{ display:block; min-height:100dvh; } .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; } .stage{ order:1; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; } .panel .row2{ display:contents; } .panel .stat{ flex:1 1 74px; min-width:74px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; } .credit{ flex:1 1 100%; order:5; text-align:center; } canvas#board{ width:92vw !important; height:auto !important; max-width:360px; } #kbd{ width:94vw; max-width:400px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <div style="position:relative; line-height:0">
+      <canvas id="board"></canvas>
+      <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+      <div id="overlay" class="overlay"><div><h2 id="ovTitle">HANGMAN</h2><p id="ovSub">Guess the word before the drawing finishes.</p><p class="big" id="ovHint">Press Enter to start</p></div></div>
+    </div>
+    <div id="kbd" aria-label="Letters"></div>
+  </div>
+  <aside class="panel">
+    <div class="row2"><div class="stat"><span class="label">Misses</span><span class="value" id="uiMiss">0/6</span></div><div class="stat"><span class="label">Streak</span><span class="value" id="uiStreak">0</span></div></div>
+    <div class="stat"><span class="label">Best streak</span><span class="value" id="uiBest">0</span></div>
+    <div class="keys">Tap letters (or type them).<br>Six wrong guesses and the drawing is complete &mdash; you lose the round.<br><b>Enter</b> next word.</div>
+    <div class="credit"><span class="sig">&#128081; by Slime Queen</span>An arcade toy for the Velvet Bunny Cabaret.<span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is recorded anywhere. All-original code and word list. Provided as-is, for fun.</span></div>
+  </aside>
+</div>
+<script>
+(function(){
+  'use strict';
+  var Snd=(function(KEY){var actx=null,master,muted=false;try{muted=localStorage.getItem(KEY)==='1';}catch(e){}
+    function init(){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;actx=new AC();master=actx.createGain();master.gain.value=muted?0:0.85;master.connect(actx.destination);return true;}
+    function ok(){if(!actx&&!init())return false;if(actx.state==='suspended')actx.resume();return true;}
+    function mf(m){return 440*Math.pow(2,(m-69)/12);}
+    function t(f,at,dur,type,vol,f2){var o=actx.createOscillator(),g=actx.createGain();o.type=type||'square';o.frequency.setValueAtTime(f,at);if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);g.gain.setValueAtTime(0.0001,at);g.gain.exponentialRampToValueAtTime(vol,at+0.008);g.gain.setValueAtTime(vol,at+dur*0.6);g.gain.exponentialRampToValueAtTime(0.0001,at+dur);o.connect(g);g.connect(master);o.start(at);o.stop(at+dur+0.02);}
+    return {toggle:function(){muted=!muted;if(master)master.gain.value=muted?0:0.85;try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){}return muted;},isMuted:function(){return muted;},
+      sfx:function(f,dur,type,vol,f2){if(ok())t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2);},
+      seq:function(n,s,type,vol){if(!ok())return;var c=actx.currentTime;for(var i=0;i<n.length;i++)t(mf(n[i]),c+i*s,s*0.9,type||'square',vol||0.2);}};
+  })('hangman.muted');
+
+  var WORDS=['ARCADE','JOYSTICK','PIXEL','QUARTER','HIGHSCORE','POWERUP','BONUS','LEVEL','MAZE','GHOST','ROCKET','LASER','PADDLE','TUNNEL','JACKPOT','SLIME','VELVET','CABARET','ROULETTE','SHUFFLE','GAMBIT','NEON','RETRO','CARTRIDGE','CONTINUE','GLITCH','SPRITE','SCANLINE','MARQUEE','TOKEN','COMBO','SHIELD','PORTAL','WARP','BOSS','LADDER','BARREL','CHERRY','MUSHROOM','BOUNCE'];
+  var BW=300, BH=260;
+  function fit(cv,w,h){var d=window.devicePixelRatio||1;cv.width=Math.round(w*d);cv.height=Math.round(h*d);cv.style.width=w+'px';cv.style.height=h+'px';var c=cv.getContext('2d');c.setTransform(d,0,0,d,0,0);return c;}
+  var canvas=document.getElementById('board'), ctx=fit(canvas,BW,BH);
+  var ui={miss:document.getElementById('uiMiss'),streak:document.getElementById('uiStreak'),best:document.getElementById('uiBest'),
+    ov:document.getElementById('overlay'),ovT:document.getElementById('ovTitle'),ovS:document.getElementById('ovSub'),ovH:document.getElementById('ovHint')};
+  function loadBest(){try{return parseInt(localStorage.getItem('hangman.best'),10)||0;}catch(e){return 0;}}
+  function saveBest(v){try{localStorage.setItem('hangman.best',String(v));}catch(e){}}
+
+  var MAXMISS=6, word, guessed, misses, streak=0, best=loadBest(), state='ready';
+  function newWord(){ word=WORDS[Math.floor(Math.random()*WORDS.length)]; guessed={}; misses=0; syncUI(); buildKbd(); }
+  function syncUI(){ ui.miss.textContent=misses+'/'+MAXMISS; ui.streak.textContent=streak; ui.best.textContent=best; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')) h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again').replace('Press Enter to','Tap to'); ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
+  function startGame(){ newWord(); hideOverlay(); state='playing'; draw(); }
+
+  var kbdEl=document.getElementById('kbd');
+  function buildKbd(){ kbdEl.innerHTML=''; for(var i=65;i<=90;i++){ (function(ch){ var b=document.createElement('button'); b.type='button'; b.tabIndex=-1; b.textContent=ch;
+    b.addEventListener('click',function(){ guess(ch); }); kbdEl.appendChild(b); b.__ch=ch; })(String.fromCharCode(i)); }
+  }
+  function refreshKbd(){ var bs=kbdEl.children; for(var i=0;i<bs.length;i++){ var b=bs[i], ch=b.__ch; b.className=''; b.disabled=false;
+    if(guessed[ch]){ b.disabled=true; b.className = word.indexOf(ch)>=0?'good':'bad'; } } }
+
+  function guess(ch){ if(state!=='playing'||guessed[ch]) return; guessed[ch]=true;
+    if(word.indexOf(ch)>=0){ Snd.sfx(600,0.05,'square',0.16,820); if(isSolved()){ win(); } }
+    else { misses++; Snd.sfx(240,0.08,'sawtooth',0.2,120); if(misses>=MAXMISS){ lose(); } }
+    syncUI(); refreshKbd(); draw();
+  }
+  function isSolved(){ for(var i=0;i<word.length;i++) if(!guessed[word[i]]) return false; return true; }
+  function win(){ state='over'; streak++; if(streak>best){ best=streak; saveBest(best); } Snd.seq([72,76,79,84,88],0.09,'triangle',0.24); syncUI(); refreshKbd(); showOverlay('SOLVED!',word,'Press Enter for next word'); }
+  function lose(){ state='over'; streak=0; Snd.seq([59,52,45],0.12,'sawtooth',0.22); syncUI(); refreshKbd(); showOverlay('THE WORD WAS','"'+word+'"','Press Enter to try again'); }
+
+  function draw(){ ctx.fillStyle='#0c1018'; ctx.fillRect(0,0,BW,BH);
+    // gallows
+    ctx.strokeStyle='#5a5a6a'; ctx.lineWidth=5; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(30,220); ctx.lineTo(110,220); ctx.moveTo(60,220); ctx.lineTo(60,30); ctx.lineTo(150,30); ctx.lineTo(150,55); ctx.stroke();
+    ctx.strokeStyle='#e0975a'; ctx.lineWidth=4;
+    var m=misses;
+    if(m>0){ ctx.beginPath(); ctx.arc(150,72,17,0,7); ctx.stroke(); }            // head
+    if(m>1){ ctx.beginPath(); ctx.moveTo(150,89); ctx.lineTo(150,150); ctx.stroke(); } // body
+    if(m>2){ ctx.beginPath(); ctx.moveTo(150,105); ctx.lineTo(126,128); ctx.stroke(); } // left arm
+    if(m>3){ ctx.beginPath(); ctx.moveTo(150,105); ctx.lineTo(174,128); ctx.stroke(); } // right arm
+    if(m>4){ ctx.beginPath(); ctx.moveTo(150,150); ctx.lineTo(130,186); ctx.stroke(); } // left leg
+    if(m>5){ ctx.beginPath(); ctx.moveTo(150,150); ctx.lineTo(170,186); ctx.stroke(); } // right leg
+    // word blanks
+    var n=word?word.length:0, gap=Math.min(26, (BW-30)/Math.max(1,n)), startx=(BW-(n*gap))/2+gap/2, y=246;
+    ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    for(var i=0;i<n;i++){ var x=startx+i*gap; ctx.strokeStyle='#3a3a4a'; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(x-9,y+3); ctx.lineTo(x+9,y+3); ctx.stroke();
+      var show = guessed[word[i]] || state==='over'; if(show){ ctx.fillStyle = (state==='over'&&!guessed[word[i]])?'#e05a5a':'#f2f2ef'; ctx.font='700 18px system-ui'; ctx.fillText(word[i], x, y); } }
+  }
+
+  document.addEventListener('keydown',function(e){ if(e.code==='Enter'){ e.preventDefault(); startGame(); return; } if(e.code==='KeyM'){ /* only when not guessing a word? allow */ }
+    if(state==='playing' && e.key && e.key.length===1){ var ch=e.key.toUpperCase(); if(ch>='A'&&ch<='Z') guess(ch); } });
+  (function setupTouch(){ var muteBtn=document.getElementById('btnMute'); if(muteBtn) muteBtn.addEventListener('pointerdown',function(e){ e.preventDefault(); Snd.toggle(); syncMute(); }); syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(ui.ovH) ui.ovH.textContent=ui.ovH.textContent.replace('Press Enter for next word','Tap for next word').replace('Press Enter to try again','Tap to try again').replace('Press Enter to start','Tap to start'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart'in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches); if(isTouch) enableTouch(); window.addEventListener('touchstart',enableTouch,{passive:true,once:true});
+  })();
+  newWord(); state='ready'; draw(); showOverlay('HANGMAN','Guess the word before the drawing finishes.','Press Enter to start');
+  window.__hangman={ st:function(){return state;}, misses:function(){return misses;}, streak:function(){return streak;}, wordLen:function(){return word.length;},
+    guess:guess, reveal:function(){return word;}, solved:isSolved, hasAudio:!!Snd };
+})();
+</script>
+</body>
+</html>

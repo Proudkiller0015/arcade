@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Minesweeper</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#e05a5a; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center;
+    background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg));
+    color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px}
+  .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#0c1018; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:172px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .row2{display:flex; gap:12px}
+  .row2 .stat{flex:1; padding:10px 8px; text-align:center}
+  .label{ display:block; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1}
+  .row2 .value{font-size:18px}
+  .keys{font-size:11px; color:var(--muted); line-height:1.8; padding:2px 4px}
+  .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; letter-spacing:.02em; margin-bottom:5px; }
+  .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none}
+  .overlay h2{margin:0 0 6px; font-size:24px; letter-spacing:-.01em}
+  .overlay p{margin:0; color:var(--muted); font-size:13px}
+  .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+  #flagBtn{ background:var(--panel); color:var(--text); border:1px solid #2e2e40; border-radius:10px; padding:10px; font-family:inherit; font-size:13px; cursor:pointer; }
+  #flagBtn.on{ border-color:var(--accent); color:var(--accent); }
+  #btnMute{ display:none; position:absolute; top:6px; left:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  body.touch #btnMute{ display:flex; }
+  @media (pointer: coarse), (max-width: 680px){
+    body{ display:block; min-height:100dvh; }
+    .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; }
+    .stage{ order:1; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; }
+    .panel .row2{ display:contents; } .panel .stat{ flex:1 1 74px; min-width:74px; text-align:center; padding:6px 8px; }
+    #flagBtn{ flex:1 1 100%; order:0; } .keys{ display:none; } .credit{ flex:1 1 100%; order:5; text-align:center; }
+    canvas#board{ width:92vw !important; height:auto !important; max-width:420px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay"><div>
+      <h2 id="ovTitle">MINESWEEPER</h2>
+      <p id="ovSub">Clear every safe square. 10 mines hidden.</p>
+      <p class="big" id="ovHint">Press Enter to start</p>
+    </div></div>
+  </div>
+  <aside class="panel">
+    <div class="row2">
+      <div class="stat"><span class="label">Mines</span><span class="value" id="uiMines">10</span></div>
+      <div class="stat"><span class="label">Time</span><span class="value" id="uiTime">0</span></div>
+    </div>
+    <div class="stat"><span class="label">Best time</span><span class="value" id="uiBest">—</span></div>
+    <button id="flagBtn" type="button" tabindex="-1">Flag mode: OFF</button>
+    <div class="keys">
+      Click a square to reveal.<br>
+      Right-click (or <b>Flag mode</b>) to flag a mine.<br>
+      <b>Enter</b> new game. Numbers count nearby mines.
+    </div>
+    <div class="credit">
+      <span class="sig">&#128081; by Slime Queen</span>
+      An arcade toy for the Velvet Bunny Cabaret.
+      <span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is
+      recorded anywhere. All-original code and art. Provided as-is, for fun.</span>
+    </div>
+  </aside>
+</div>
+<script>
+(function(){
+  'use strict';
+  var Snd=(function(KEY){var actx=null,master,muted=false;try{muted=localStorage.getItem(KEY)==='1';}catch(e){}
+    function init(){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;actx=new AC();master=actx.createGain();master.gain.value=muted?0:0.85;master.connect(actx.destination);return true;}
+    function ok(){if(!actx&&!init())return false;if(actx.state==='suspended')actx.resume();return true;}
+    function mf(m){return 440*Math.pow(2,(m-69)/12);}
+    function t(f,at,dur,type,vol,f2){var o=actx.createOscillator(),g=actx.createGain();o.type=type||'square';o.frequency.setValueAtTime(f,at);if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);g.gain.setValueAtTime(0.0001,at);g.gain.exponentialRampToValueAtTime(vol,at+0.008);g.gain.setValueAtTime(vol,at+dur*0.6);g.gain.exponentialRampToValueAtTime(0.0001,at+dur);o.connect(g);g.connect(master);o.start(at);o.stop(at+dur+0.02);}
+    return {toggle:function(){muted=!muted;if(master)master.gain.value=muted?0:0.85;try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){}return muted;},isMuted:function(){return muted;},
+      sfx:function(f,dur,type,vol,f2){if(ok())t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2);},
+      seq:function(n,s,type,vol){if(!ok())return;var c=actx.currentTime;for(var i=0;i<n.length;i++)t(mf(n[i]),c+i*s,s*0.9,type||'square',vol||0.2);}};
+  })('minesweeper.muted');
+
+  var N=9, MINES=10, CELL=30, BW=N*CELL, BH=N*CELL;
+  function fit(cv,w,h){var d=window.devicePixelRatio||1;cv.width=Math.round(w*d);cv.height=Math.round(h*d);cv.style.width=w+'px';cv.style.height=h+'px';var c=cv.getContext('2d');c.setTransform(d,0,0,d,0,0);return c;}
+  var canvas=document.getElementById('board'), ctx=fit(canvas,BW,BH);
+  var ui={mines:document.getElementById('uiMines'),time:document.getElementById('uiTime'),best:document.getElementById('uiBest'),
+    ov:document.getElementById('overlay'),ovT:document.getElementById('ovTitle'),ovS:document.getElementById('ovSub'),ovH:document.getElementById('ovHint')};
+  function loadBest(){try{var v=parseInt(localStorage.getItem('minesweeper.best'),10);return v>0?v:0;}catch(e){return 0;}}
+  function saveBest(v){try{localStorage.setItem('minesweeper.best',String(v));}catch(e){}}
+
+  var grid, revealed, flagged, mineCount, state='ready', firstClick, timeSec, timer0, best=loadBest(), flagMode=false;
+  var NUMCOL=['','#5aa0ff','#5ad469','#f2545b','#b06cff','#ff9f43','#38d6c0','#f2f2ef','#8b8b9a'];
+
+  function reset(){ grid=[]; revealed=[]; flagged=[];
+    for(var r=0;r<N;r++){ grid.push([]); revealed.push([]); flagged.push([]); for(var c=0;c<N;c++){ grid[r].push(0); revealed[r].push(false); flagged[r].push(false); } }
+    mineCount=MINES; firstClick=true; timeSec=0; timer0=0; syncUI();
+  }
+  function placeMines(sr,sc){
+    var spots=[]; for(var r=0;r<N;r++) for(var c=0;c<N;c++){ if(Math.abs(r-sr)<=1 && Math.abs(c-sc)<=1) continue; spots.push([r,c]); }
+    for(var i=spots.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)); var t=spots[i]; spots[i]=spots[j]; spots[j]=t; }
+    for(i=0;i<MINES;i++){ grid[spots[i][0]][spots[i][1]]=-1; }
+    for(r=0;r<N;r++) for(c=0;c<N;c++){ if(grid[r][c]===-1) continue; var n=0;
+      for(var dr=-1;dr<=1;dr++) for(var dc=-1;dc<=1;dc++){ var nr=r+dr,nc=c+dc; if(nr>=0&&nr<N&&nc>=0&&nc<N&&grid[nr][nc]===-1) n++; }
+      grid[r][c]=n; }
+  }
+  function syncUI(){ ui.mines.textContent=Math.max(0,mineCount); ui.time.textContent=timeSec; ui.best.textContent=best?best+'s':'—'; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')) h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again');
+    ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
+  function startGame(){ reset(); hideOverlay(); state='playing'; draw(); }
+
+  function reveal(r,c){
+    if(state!=='playing'||revealed[r][c]||flagged[r][c]) return;
+    if(firstClick){ placeMines(r,c); firstClick=false; timer0=Date.now(); }
+    revealed[r][c]=true;
+    if(grid[r][c]===-1){ boom(); return; }
+    Snd.sfx(520,0.03,'square',0.1,660);
+    if(grid[r][c]===0){ for(var dr=-1;dr<=1;dr++) for(var dc=-1;dc<=1;dc++){ var nr=r+dr,nc=c+dc; if(nr>=0&&nr<N&&nc>=0&&nc<N&&!revealed[nr][nc]&&!flagged[nr][nc]) reveal(nr,nc); } }
+    checkWin();
+  }
+  function toggleFlag(r,c){ if(state!=='playing'||revealed[r][c]) return; flagged[r][c]=!flagged[r][c]; mineCount+=flagged[r][c]?-1:1; Snd.sfx(flagged[r][c]?700:360,0.04,'square',0.14); syncUI(); draw(); }
+  function boom(){ state='over'; Snd.seq([64,59,52,45],0.12,'sawtooth',0.24);
+    for(var r=0;r<N;r++) for(var c=0;c<N;c++) if(grid[r][c]===-1) revealed[r][c]=true;
+    draw(); showOverlay('BOOM','You hit a mine.','Press Enter to play again'); }
+  function checkWin(){ var safe=0; for(var r=0;r<N;r++) for(var c=0;c<N;c++) if(grid[r][c]!==-1 && revealed[r][c]) safe++;
+    if(safe===N*N-MINES){ state='won'; var el=Math.round((Date.now()-timer0)/1000); Snd.seq([72,76,79,84,88],0.09,'triangle',0.24);
+      if(!best||el<best){ best=el; saveBest(best); } syncUI(); draw(); showOverlay('SWEPT!','Cleared in '+el+'s','Press Enter to play again'); } }
+
+  function draw(){
+    ctx.fillStyle='#0c1018'; ctx.fillRect(0,0,BW,BH);
+    for(var r=0;r<N;r++) for(var c=0;c<N;c++){ var x=c*CELL,y=r*CELL;
+      if(revealed[r][c]){
+        if(grid[r][c]===-1){ ctx.fillStyle='#5a1f24'; rr(x+1,y+1,CELL-2,CELL-2,4); ctx.fill(); ctx.fillStyle='#f2545b'; ctx.beginPath(); ctx.arc(x+CELL/2,y+CELL/2,6,0,7); ctx.fill(); }
+        else{ ctx.fillStyle='#1a1a26'; rr(x+1,y+1,CELL-2,CELL-2,4); ctx.fill();
+          if(grid[r][c]>0){ ctx.fillStyle=NUMCOL[grid[r][c]]; ctx.font='700 15px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(grid[r][c]),x+CELL/2,y+CELL/2+1); } }
+      } else {
+        ctx.fillStyle='#2b2b3c'; rr(x+1,y+1,CELL-2,CELL-2,4); ctx.fill();
+        ctx.fillStyle='rgba(255,255,255,0.06)'; rr(x+1,y+1,CELL-2,4,3); ctx.fill();
+        if(flagged[r][c]){ ctx.fillStyle='#e05a5a'; ctx.beginPath(); ctx.moveTo(x+10,y+8); ctx.lineTo(x+10,y+CELL-7); ctx.lineTo(x+11.5,y+CELL-7); ctx.lineTo(x+11.5,y+8); ctx.closePath(); ctx.fill(); ctx.beginPath(); ctx.moveTo(x+11,y+8); ctx.lineTo(x+CELL-8,y+12); ctx.lineTo(x+11,y+16); ctx.closePath(); ctx.fill(); }
+      }
+    }
+  }
+  function rr(x,y,w,h,rad){ctx.beginPath();if(ctx.roundRect){ctx.roundRect(x,y,w,h,rad);}else{ctx.moveTo(x+rad,y);ctx.arcTo(x+w,y,x+w,y+h,rad);ctx.arcTo(x+w,y+h,x,y+h,rad);ctx.arcTo(x,y+h,x,y,rad);ctx.arcTo(x,y,x+w,y,rad);ctx.closePath();}}
+
+  function loop(){ if(state==='playing'&&!firstClick){ timeSec=Math.round((Date.now()-timer0)/1000); ui.time.textContent=timeSec; } requestAnimationFrame(loop); }
+
+  document.addEventListener('keydown',function(e){ if(e.code==='Enter'){ e.preventDefault(); startGame(); } if(e.code==='KeyM'){ Snd.toggle(); syncMute(); } });
+  function cellAt(e){ var r=canvas.getBoundingClientRect(); var c=Math.floor((e.clientX-r.left)/r.width*N), rr2=Math.floor((e.clientY-r.top)/r.height*N); return [rr2,c]; }
+  canvas.addEventListener('click',function(e){ if(state==='ready'||state==='over'||state==='won'){ startGame(); return; } var p=cellAt(e); if(p[0]<0||p[0]>=N||p[1]<0||p[1]>=N) return; if(flagMode) toggleFlag(p[0],p[1]); else reveal(p[0],p[1]); draw(); });
+  canvas.addEventListener('contextmenu',function(e){ e.preventDefault(); if(state!=='playing') return; var p=cellAt(e); if(p[0]>=0&&p[0]<N&&p[1]>=0&&p[1]<N) toggleFlag(p[0],p[1]); });
+  var flagBtn=document.getElementById('flagBtn');
+  flagBtn.addEventListener('click',function(){ flagMode=!flagMode; flagBtn.textContent='Flag mode: '+(flagMode?'ON':'OFF'); flagBtn.classList.toggle('on',flagMode); });
+
+  (function setupTouch(){ var muteBtn=document.getElementById('btnMute');
+    if(muteBtn) muteBtn.addEventListener('pointerdown',function(e){ e.preventDefault(); Snd.toggle(); syncMute(); }); syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(ui.ovH) ui.ovH.textContent=ui.ovH.textContent.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart'in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches);
+    if(isTouch) enableTouch(); window.addEventListener('touchstart',enableTouch,{passive:true,once:true});
+  })();
+
+  reset(); state='ready'; draw();
+  showOverlay('MINESWEEPER','Clear every safe square. 10 mines hidden.','Press Enter to start');
+  requestAnimationFrame(loop);
+
+  window.__minesweeper={ st:function(){return state;}, mines:function(){return mineCount;}, time:function(){return timeSec;},
+    reveal:function(r,c){reveal(r,c);draw();}, flag:function(r,c){toggleFlag(r,c);}, cell:function(r,c){return grid[r][c];}, isRevealed:function(r,c){return revealed[r][c];},
+    revealSafe:function(){ // reveal all non-mine cells (test helper)
+      if(firstClick) reveal(0,0); for(var r=0;r<N;r++)for(var c=0;c<N;c++) if(grid[r][c]!==-1&&!revealed[r][c]) reveal(r,c); draw(); }, hasAudio:!!Snd };
+})();
+</script>
+</body>
+</html>

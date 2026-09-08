@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Whack-a-Mole</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#c89b5a; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center; background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg)); color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px}
+  .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#0c1018; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:172px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .row2{display:flex; gap:12px} .row2 .stat{flex:1; padding:10px 8px; text-align:center}
+  .label{ display:block; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1} .row2 .value{font-size:18px}
+  .keys{font-size:11px; color:var(--muted); line-height:1.8; padding:2px 4px} .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; margin-bottom:5px; } .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none} .overlay h2{margin:0 0 6px; font-size:24px} .overlay p{margin:0; color:var(--muted); font-size:13px} .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+  #btnMute{ display:none; position:absolute; top:6px; left:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; }
+  body.touch #btnMute{ display:flex; }
+  @media (pointer: coarse), (max-width: 680px){ body{ display:block; min-height:100dvh; } .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; } .stage{ order:1; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; } .panel .row2{ display:contents; } .panel .stat{ flex:1 1 74px; min-width:74px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; } .credit{ flex:1 1 100%; order:5; text-align:center; } canvas#board{ width:92vw !important; height:auto !important; max-width:420px; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay"><div><h2 id="ovTitle">WHACK-A-MOLE</h2><p id="ovSub">Bonk the moles. Skip the bombs. 30 seconds.</p><p class="big" id="ovHint">Press Enter to start</p></div></div>
+  </div>
+  <aside class="panel">
+    <div class="row2"><div class="stat"><span class="label">Score</span><span class="value" id="uiScore">0</span></div><div class="stat"><span class="label">Time</span><span class="value" id="uiTime">30</span></div></div>
+    <div class="stat"><span class="label">Best</span><span class="value" id="uiBest">0</span></div>
+    <div class="keys">Tap a mole to bonk it (+10).<br>Gold mole is +30. <b>Don't</b> hit the bomb (&minus;15).<br><b>Enter</b> restart.</div>
+    <div class="credit"><span class="sig">&#128081; by Slime Queen</span>An arcade toy for the Velvet Bunny Cabaret.<span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is recorded anywhere. All-original code and art. Provided as-is, for fun.</span></div>
+  </aside>
+</div>
+<script>
+(function(){
+  'use strict';
+  var Snd=(function(KEY){var actx=null,master,muted=false;try{muted=localStorage.getItem(KEY)==='1';}catch(e){}
+    function init(){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;actx=new AC();master=actx.createGain();master.gain.value=muted?0:0.85;master.connect(actx.destination);return true;}
+    function ok(){if(!actx&&!init())return false;if(actx.state==='suspended')actx.resume();return true;}
+    function mf(m){return 440*Math.pow(2,(m-69)/12);}
+    function t(f,at,dur,type,vol,f2){var o=actx.createOscillator(),g=actx.createGain();o.type=type||'square';o.frequency.setValueAtTime(f,at);if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);g.gain.setValueAtTime(0.0001,at);g.gain.exponentialRampToValueAtTime(vol,at+0.008);g.gain.setValueAtTime(vol,at+dur*0.6);g.gain.exponentialRampToValueAtTime(0.0001,at+dur);o.connect(g);g.connect(master);o.start(at);o.stop(at+dur+0.02);}
+    return {toggle:function(){muted=!muted;if(master)master.gain.value=muted?0:0.85;try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){}return muted;},isMuted:function(){return muted;},
+      sfx:function(f,dur,type,vol,f2){if(ok())t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2);},
+      seq:function(n,s,type,vol){if(!ok())return;var c=actx.currentTime;for(var i=0;i<n.length;i++)t(mf(n[i]),c+i*s,s*0.9,type||'square',vol||0.2);}};
+  })('whack.muted');
+
+  var N=3, CELL=104, PAD=10, BW=N*CELL+PAD*2, BH=N*CELL+PAD*2;
+  function fit(cv,w,h){var d=window.devicePixelRatio||1;cv.width=Math.round(w*d);cv.height=Math.round(h*d);cv.style.width=w+'px';cv.style.height=h+'px';var c=cv.getContext('2d');c.setTransform(d,0,0,d,0,0);return c;}
+  var canvas=document.getElementById('board'), ctx=fit(canvas,BW,BH);
+  var ui={score:document.getElementById('uiScore'),time:document.getElementById('uiTime'),best:document.getElementById('uiBest'),
+    ov:document.getElementById('overlay'),ovT:document.getElementById('ovTitle'),ovS:document.getElementById('ovSub'),ovH:document.getElementById('ovHint')};
+  function loadBest(){try{return parseInt(localStorage.getItem('whack.best'),10)||0;}catch(e){return 0;}}
+  function saveBest(v){try{localStorage.setItem('whack.best',String(v));}catch(e){}}
+
+  var holes, score, best=loadBest(), timeLeft, state='ready', spawnT;
+  function newGame(){ holes=[]; for(var i=0;i<9;i++) holes.push({up:0,type:'mole',pop:0}); score=0; timeLeft=30; spawnT=0.6; syncUI(); }
+  function syncUI(){ ui.score.textContent=score; ui.time.textContent=Math.ceil(timeLeft); ui.best.textContent=best; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')) h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
+  function startGame(){ newGame(); hideOverlay(); state='playing'; }
+  function endGame(){ state='over'; if(score>best){best=score;saveBest(best);} Snd.seq([72,67,64,60],0.12,'triangle',0.22); syncUI(); showOverlay('TIME!','You scored '+score,'Press Enter to play again'); }
+
+  function spawn(){ var empty=[]; for(var i=0;i<9;i++) if(holes[i].up<=0) empty.push(i); if(!empty.length) return;
+    var h=holes[empty[Math.floor(Math.random()*empty.length)]]; var r=Math.random();
+    h.type = r<0.12?'bomb' : (r<0.24?'gold':'mole'); h.up = 0.7 + Math.random()*0.6; h.pop=0; }
+
+  function step(dt){ timeLeft-=dt; if(timeLeft<=0){ timeLeft=0; endGame(); return; }
+    spawnT-=dt; var rate=Math.max(0.32, 0.72 - (30-timeLeft)*0.012);
+    if(spawnT<=0){ spawn(); spawnT=rate; }
+    for(var i=0;i<9;i++){ var h=holes[i]; if(h.up>0){ h.up-=dt; if(h.pop<1) h.pop=Math.min(1,h.pop+dt*6); if(h.up<=0){ h.up=0; h.pop=0; } } }
+  }
+  function whack(i){ if(state!=='playing') return; var h=holes[i]; if(h.up<=0) return;
+    if(h.type==='bomb'){ score=Math.max(0,score-15); Snd.seq([48,43,36],0.09,'sawtooth',0.24); }
+    else { score += h.type==='gold'?30:10; Snd.sfx(h.type==='gold'?880:600,0.06,'square',0.2,h.type==='gold'?1240:900); }
+    h.up=0; h.pop=0; syncUI(); }
+
+  function draw(){ ctx.fillStyle='#0c1018'; ctx.fillRect(0,0,BW,BH);
+    for(var i=0;i<9;i++){ var r=Math.floor(i/3), c=i%3, cx=PAD+c*CELL+CELL/2, cy=PAD+r*CELL+CELL/2;
+      ctx.fillStyle='#161620'; ctx.beginPath(); ctx.ellipse(cx,cy+18,CELL*0.36,CELL*0.16,0,0,7); ctx.fill();
+      ctx.fillStyle='#0a0a12'; ctx.beginPath(); ctx.ellipse(cx,cy+18,CELL*0.30,CELL*0.12,0,0,7); ctx.fill();
+      var h=holes[i]; if(h.up>0){ var rise=h.pop*26; var y=cy+14-rise;
+        if(h.type==='bomb'){ ctx.fillStyle='#2b2b33'; ctx.beginPath(); ctx.arc(cx,y,20,0,7); ctx.fill(); ctx.fillStyle='#e05a5a'; ctx.fillRect(cx-1,y-26,3,8); ctx.fillStyle='#ff9f43'; ctx.beginPath(); ctx.arc(cx,y-27,2.5,0,7); ctx.fill(); }
+        else { var body=h.type==='gold'?'#ffd54a':'#a9773f'; ctx.fillStyle=body; ctx.beginPath(); ctx.arc(cx,y,21,Math.PI,0); ctx.ellipse(cx,y,21,17,0,0,Math.PI); ctx.fill();
+          ctx.fillStyle=h.type==='gold'?'#c79a1f':'#7c5427'; ctx.beginPath(); ctx.arc(cx-8,y-3,3,0,7); ctx.arc(cx+8,y-3,3,0,7); ctx.fill();
+          ctx.fillStyle='#3a2a17'; ctx.beginPath(); ctx.arc(cx-8,y-3,1.4,0,7); ctx.arc(cx+8,y-3,1.4,0,7); ctx.fill();
+          ctx.fillStyle='#e0a0a8'; ctx.beginPath(); ctx.arc(cx,y+4,3,0,7); ctx.fill(); }
+      }
+    }
+  }
+  var last=0; function loop(t){ var dt=last?Math.min((t-last)/1000,0.05):0; last=t; if(state==='playing') step(dt); if(state==='playing') ui.time.textContent=Math.ceil(timeLeft); draw(); requestAnimationFrame(loop); }
+
+  document.addEventListener('keydown',function(e){ if(e.code==='Enter'){ e.preventDefault(); startGame(); } else if(e.code==='KeyM'){ Snd.toggle(); syncMute(); } });
+  canvas.addEventListener('pointerdown',function(e){ if(state==='ready'||state==='over'){ startGame(); return; } var r=canvas.getBoundingClientRect(); var x=(e.clientX-r.left)/r.width*BW, y=(e.clientY-r.top)/r.height*BH;
+    var c=Math.floor((x-PAD)/CELL), rr2=Math.floor((y-PAD)/CELL); if(c>=0&&c<3&&rr2>=0&&rr2<3) whack(rr2*3+c); e.preventDefault(); });
+  (function setupTouch(){ var muteBtn=document.getElementById('btnMute'); if(muteBtn) muteBtn.addEventListener('pointerdown',function(e){ e.preventDefault(); Snd.toggle(); syncMute(); }); syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(ui.ovH) ui.ovH.textContent=ui.ovH.textContent.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart'in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches); if(isTouch) enableTouch(); window.addEventListener('touchstart',enableTouch,{passive:true,once:true});
+  })();
+  newGame(); state='ready'; showOverlay('WHACK-A-MOLE','Bonk the moles. Skip the bombs. 30 seconds.','Press Enter to start'); requestAnimationFrame(loop);
+  window.__whack={ st:function(){return state;}, score:function(){return score;}, time:function(){return timeLeft;},
+    upHoles:function(){var a=[];for(var i=0;i<9;i++)if(holes[i].up>0)a.push(i+':'+holes[i].type);return a;}, whack:whack,
+    sim:function(n,dt){dt=dt||1/60;for(var i=0;i<n&&state==='playing';i++)step(dt);}, hasAudio:!!Snd };
+})();
+</script>
+</body>
+</html>

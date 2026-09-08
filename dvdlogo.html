@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>DVD Logo</title>
+<style>
+  :root{ --bg:#0e0e14; --panel:#17171f; --text:#f2f2ef; --muted:#8b8b9a; --accent:#5ad0ff; }
+  *{box-sizing:border-box}
+  body{ margin:0; min-height:100vh; display:grid; place-items:center;
+    background:radial-gradient(1200px 800px at 50% -10%, #1b1b28, var(--bg));
+    color:var(--text); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; user-select:none; -webkit-user-select:none; }
+  .wrap{display:flex; gap:22px; align-items:flex-start; padding:24px}
+  .stage{position:relative; line-height:0}
+  canvas#board{ border-radius:10px; box-shadow:0 0 0 1px #2c2c3a, 0 24px 60px -20px #000; background:#000; }
+  .panel{display:flex; flex-direction:column; gap:12px; width:172px}
+  .stat{ background:var(--panel); border:1px solid #26263a; border-radius:10px; padding:10px 12px; }
+  .row2{display:flex; gap:12px}
+  .row2 .stat{flex:1; padding:10px 8px; text-align:center}
+  .label{ display:block; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:4px; }
+  .value{font-size:22px; font-weight:650; font-variant-numeric:tabular-nums; line-height:1.1}
+  .row2 .value{font-size:18px}
+  .keys{font-size:11px; color:var(--muted); line-height:1.8; padding:2px 4px}
+  .keys b{ color:#cfcfe0; font-weight:600; background:#20202c; border:1px solid #2e2e40; border-radius:4px; padding:1px 5px; font-size:10px; }
+  .credit{ margin-top:2px; padding:8px 4px 2px; border-top:1px solid #26263a; font-size:10px; color:var(--muted); line-height:1.5; }
+  .credit .sig{ display:block; font-size:12px; color:var(--accent); font-weight:600; letter-spacing:.02em; margin-bottom:5px; }
+  .credit .dis{ display:block; font-size:9px; opacity:.8 }
+  .overlay{ position:absolute; inset:0; display:grid; place-items:center; background:#0b0b12cc; backdrop-filter:blur(3px); border-radius:10px; text-align:center; line-height:1.5; }
+  .overlay.hidden{display:none}
+  .overlay h2{margin:0 0 6px; font-size:24px; letter-spacing:-.01em}
+  .overlay p{margin:0; color:var(--muted); font-size:13px}
+  .overlay .big{color:var(--accent); font-size:15px; font-weight:600; margin-top:10px}
+  #btnMute{ display:none; position:absolute; top:6px; left:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  body.touch #btnMute{ display:flex; }
+  @media (pointer: coarse), (max-width: 680px){
+    body{ display:block; min-height:100dvh; }
+    .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; }
+    .stage{ order:1; }
+    .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; }
+    .panel .row2{ display:contents; } .panel .stat{ flex:1 1 74px; min-width:74px; text-align:center; padding:6px 8px; }
+    .keys{ display:none; } .credit{ flex:1 1 100%; order:5; text-align:center; }
+    canvas#board{ width:94vw !important; height:auto !important; max-width:460px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <button id="btnMute" type="button" tabindex="-1" aria-label="Mute">&#128266;</button>
+    <div id="overlay" class="overlay"><div>
+      <h2 id="ovTitle">DVD LOGO</h2>
+      <p id="ovSub">Steer the logo into the corners. 60 seconds.</p>
+      <p class="big" id="ovHint">Press Enter to start</p>
+    </div></div>
+  </div>
+  <aside class="panel">
+    <div class="row2">
+      <div class="stat"><span class="label">Corners</span><span class="value" id="uiScore">0</span></div>
+      <div class="stat"><span class="label">Time</span><span class="value" id="uiTime">60</span></div>
+    </div>
+    <div class="stat"><span class="label">Best corners</span><span class="value" id="uiBest">0</span></div>
+    <div class="keys">
+      Click / tap anywhere to <b>flick</b> the logo that way.<br>
+      Every corner it clips scores. Walls just recolour it.<br>
+      <b>P</b> pause &nbsp; <b>Enter</b> restart
+    </div>
+    <div class="credit">
+      <span class="sig">&#128081; by Slime Queen</span>
+      An arcade toy for the Velvet Bunny Cabaret.
+      <span class="dis">Runs entirely in your own browser &mdash; nothing is uploaded and no score is
+      recorded anywhere. All-original code and art; the bouncing-logo idea is a screensaver homage. Provided as-is, for fun.</span>
+    </div>
+  </aside>
+</div>
+<script>
+(function(){
+  'use strict';
+  var Snd=(function(KEY){var actx=null,master,muted=false;try{muted=localStorage.getItem(KEY)==='1';}catch(e){}
+    function init(){var AC=window.AudioContext||window.webkitAudioContext;if(!AC)return false;actx=new AC();master=actx.createGain();master.gain.value=muted?0:0.85;master.connect(actx.destination);return true;}
+    function ok(){if(!actx&&!init())return false;if(actx.state==='suspended')actx.resume();return true;}
+    function mf(m){return 440*Math.pow(2,(m-69)/12);}
+    function t(f,at,dur,type,vol,f2){var o=actx.createOscillator(),g=actx.createGain();o.type=type||'square';o.frequency.setValueAtTime(f,at);if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+dur);g.gain.setValueAtTime(0.0001,at);g.gain.exponentialRampToValueAtTime(vol,at+0.008);g.gain.setValueAtTime(vol,at+dur*0.6);g.gain.exponentialRampToValueAtTime(0.0001,at+dur);o.connect(g);g.connect(master);o.start(at);o.stop(at+dur+0.02);}
+    return {toggle:function(){muted=!muted;if(master)master.gain.value=muted?0:0.85;try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){}return muted;},isMuted:function(){return muted;},
+      sfx:function(f,dur,type,vol,f2){if(ok())t(f,actx.currentTime,dur||0.08,type||'square',vol||0.2,f2);},
+      seq:function(n,s,type,vol){if(!ok())return;var c=actx.currentTime;for(var i=0;i<n.length;i++)t(mf(n[i]),c+i*s,s*0.9,type||'square',vol||0.2);}};
+  })('dvdlogo.muted');
+
+  var BW=440, BH=300, LW=70, LH=34;
+  function fit(cv,w,h){var d=window.devicePixelRatio||1;cv.width=Math.round(w*d);cv.height=Math.round(h*d);cv.style.width=w+'px';cv.style.height=h+'px';var c=cv.getContext('2d');c.setTransform(d,0,0,d,0,0);return c;}
+  var canvas=document.getElementById('board'), ctx=fit(canvas,BW,BH);
+  var ui={score:document.getElementById('uiScore'),time:document.getElementById('uiTime'),best:document.getElementById('uiBest'),
+    ov:document.getElementById('overlay'),ovT:document.getElementById('ovTitle'),ovS:document.getElementById('ovSub'),ovH:document.getElementById('ovHint')};
+  function loadBest(){try{return parseInt(localStorage.getItem('dvdlogo.best'),10)||0;}catch(e){return 0;}}
+  function saveBest(v){try{localStorage.setItem('dvdlogo.best',String(v));}catch(e){}}
+
+  var COLORS=['#5ad0ff','#ff5b6b','#ffd54a','#5ad469','#b06cff','#ff9f43','#ff6cff','#38d6c0'];
+  var logo, score, best=loadBest(), timeLeft, state='ready', flash=0, cornerFlash=0;
+  var CORNER=26;  // how close to a corner counts as a corner hit
+
+  function newGame(){ logo={ x:BW/2-LW/2, y:BH/2-LH/2, vx:130, vy:96, ci:0 };
+    var a=Math.random()*Math.PI*2; var sp=165; logo.vx=Math.cos(a)*sp; logo.vy=Math.sin(a)*sp;
+    score=0; timeLeft=60; flash=0; cornerFlash=0; syncUI(); }
+  function syncUI(){ ui.score.textContent=score; ui.time.textContent=Math.ceil(timeLeft); ui.best.textContent=best; }
+  function showOverlay(t,s,h){ if(document.body.classList.contains('touch')) h=h.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again').replace('Press P to resume','Tap to resume');
+    ui.ovT.textContent=t; ui.ovS.textContent=s; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
+  function hideOverlay(){ ui.ov.classList.add('hidden'); }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
+  function startGame(){ newGame(); hideOverlay(); state='playing'; }
+  function togglePause(){ if(state==='playing'){ state='paused'; showOverlay('PAUSED','Corners '+score,'Press P to resume'); } else if(state==='paused'){ state='playing'; hideOverlay(); } }
+  function recolor(){ logo.ci=(logo.ci+1)%COLORS.length; }
+  function endGame(){ state='over'; if(score>best){ best=score; saveBest(best); } Snd.seq([72,67,64,60],0.12,'triangle',0.22); syncUI(); showOverlay("TIME!",'You clipped '+score+' corner'+(score===1?'':'s'),'Press Enter to play again'); }
+
+  function step(dt){
+    timeLeft-=dt; if(timeLeft<=0){ timeLeft=0; endGame(); return; }
+    logo.x+=logo.vx*dt; logo.y+=logo.vy*dt;
+    var hx=false, hy=false;
+    if(logo.x<=0){ logo.x=0; logo.vx=Math.abs(logo.vx); hx=true; }
+    else if(logo.x+LW>=BW){ logo.x=BW-LW; logo.vx=-Math.abs(logo.vx); hx=true; }
+    if(logo.y<=0){ logo.y=0; logo.vy=Math.abs(logo.vy); hy=true; }
+    else if(logo.y+LH>=BH){ logo.y=BH-LH; logo.vy=-Math.abs(logo.vy); hy=true; }
+    if(hx||hy){ recolor();
+      // corner hit: the logo touches a wall AND is within CORNER of that side's corner
+      var nearL=logo.x<=CORNER, nearR=logo.x+LW>=BW-CORNER, nearT=logo.y<=CORNER, nearB=logo.y+LH>=BH-CORNER;
+      var corner=(hx&&(nearT||nearB))||(hy&&(nearL||nearR))||(hx&&hy);
+      if(corner){ score++; cornerFlash=0.6; Snd.seq([76,81,88],0.06,'square',0.22); syncUI(); }
+      else { flash=0.15; Snd.sfx(300,0.03,'square',0.1); }
+    }
+  }
+  function flick(cx,cy){ if(state!=='playing') return; var lx=logo.x+LW/2, ly=logo.y+LH/2;
+    var dx=cx-lx, dy=cy-ly, m=Math.hypot(dx,dy)||1; var sp=Math.hypot(logo.vx,logo.vy);
+    logo.vx=dx/m*sp; logo.vy=dy/m*sp; Snd.sfx(560,0.05,'square',0.14,760); }
+
+  function draw(){
+    ctx.fillStyle='#000'; ctx.fillRect(0,0,BW,BH);
+    // subtle corner targets
+    ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.lineWidth=2;
+    [[0,0],[BW,0],[0,BH],[BW,BH]].forEach(function(p){ ctx.beginPath(); var sx=p[0]===0?1:-1, sy=p[1]===0?1:-1;
+      ctx.moveTo(p[0]+sx*CORNER,p[1]); ctx.lineTo(p[0],p[1]); ctx.lineTo(p[0],p[1]+sy*CORNER); ctx.stroke(); });
+    if(cornerFlash>0){ ctx.fillStyle='rgba(90,208,255,'+(0.25*cornerFlash)+')'; ctx.fillRect(0,0,BW,BH); }
+    // logo
+    var col=COLORS[logo.ci];
+    ctx.fillStyle=col; rr(logo.x,logo.y,LW,LH,8); ctx.fill();
+    ctx.fillStyle='#000'; ctx.font='800 20px system-ui,sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('DVD', logo.x+LW/2, logo.y+LH/2-2);
+    ctx.font='700 8px system-ui,sans-serif'; ctx.fillText('VIDEO', logo.x+LW/2, logo.y+LH/2+10);
+    if(flash>0){ ctx.fillStyle='rgba(255,255,255,'+(0.5*flash)+')'; rr(logo.x-2,logo.y-2,LW+4,LH+4,9); ctx.fill(); }
+  }
+  function rr(x,y,w,h,rad){ctx.beginPath();if(ctx.roundRect){ctx.roundRect(x,y,w,h,rad);}else{ctx.moveTo(x+rad,y);ctx.arcTo(x+w,y,x+w,y+h,rad);ctx.arcTo(x+w,y+h,x,y+h,rad);ctx.arcTo(x,y+h,x,y,rad);ctx.arcTo(x,y,x+w,y,rad);ctx.closePath();}}
+
+  var last=0;
+  function loop(t){ var dt=last?Math.min((t-last)/1000,0.05):0; last=t;
+    if(state==='playing') step(dt);
+    if(flash>0) flash-=dt; if(cornerFlash>0) cornerFlash-=dt;
+    draw(); requestAnimationFrame(loop); }
+
+  document.addEventListener('keydown',function(e){ if(e.code==='Enter'){ e.preventDefault(); startGame(); } else if(e.code==='KeyP'){ togglePause(); } else if(e.code==='KeyM'){ Snd.toggle(); syncMute(); } });
+  window.addEventListener('blur',function(){ if(state==='playing'){ state='paused'; showOverlay('PAUSED','Corners '+score,'Press P to resume'); } });
+  canvas.addEventListener('pointerdown',function(e){ if(state==='ready'||state==='over'){ startGame(); return; } if(state==='paused'){ togglePause(); return; }
+    var r=canvas.getBoundingClientRect(); flick((e.clientX-r.left)/r.width*BW,(e.clientY-r.top)/r.height*BH); e.preventDefault(); });
+
+  (function setupTouch(){ var muteBtn=document.getElementById('btnMute');
+    if(muteBtn) muteBtn.addEventListener('pointerdown',function(e){ e.preventDefault(); Snd.toggle(); syncMute(); }); syncMute();
+    ui.ov.addEventListener('pointerdown',function(e){ e.preventDefault(); if(state==='paused') togglePause(); else startGame(); });
+    function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(ui.ovH) ui.ovH.textContent=ui.ovH.textContent.replace('Press Enter to start','Tap to start').replace('Press Enter to play again','Tap to play again').replace('Press P to resume','Tap to resume'); }
+    var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart'in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches);
+    if(isTouch) enableTouch(); window.addEventListener('touchstart',enableTouch,{passive:true,once:true});
+  })();
+
+  newGame(); state='ready';
+  showOverlay('DVD LOGO','Steer the logo into the corners. 60 seconds.','Press Enter to start');
+  requestAnimationFrame(loop);
+
+  window.__dvdlogo={ st:function(){return state;}, score:function(){return score;}, time:function(){return timeLeft;},
+    pos:function(){return Math.round(logo.x)+','+Math.round(logo.y);}, flick:flick, hasAudio:!!Snd,
+    sim:function(n,dt){ dt=dt||1/60; for(var i=0;i<n && state==='playing';i++) step(dt); } };
+})();
+</script>
+</body>
+</html>
