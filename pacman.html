@@ -238,8 +238,6 @@
     setCell(rows,10,7,'#'); setCell(rows,10,8,' '); setCell(rows,10,9,' '); setCell(rows,10,10,' '); setCell(rows,10,11,'#');
     setCell(rows,11,7,'#'); setCell(rows,11,8,' '); setCell(rows,11,9,' '); setCell(rows,11,10,' '); setCell(rows,11,11,'#');
     setCell(rows,12,7,'#'); setCell(rows,12,8,'#'); setCell(rows,12,9,'#'); setCell(rows,12,10,'#'); setCell(rows,12,11,'#');
-    // top<->bottom warp portals: open the border at the portal columns (5 & 13)
-    setCell(rows,0,5,'='); setCell(rows,0,13,'='); setCell(rows,21,5,'='); setCell(rows,21,13,'=');
     return rows;
   }
 
@@ -274,12 +272,10 @@
   function saveBest(v){ try { localStorage.setItem('pacman.best', String(v)); } catch(e){} }
   best = loadBest();
 
-  var VPORT = [5, 13];   // columns with top<->bottom warp portals (the "4 ways")
-  function isVport(c){ return c===5 || c===13; }
   function wallAt(c,r){
-    if(r===10||r===11){ c = (c+COLS)%COLS; }      // side tunnel rows wrap horizontally
-    if(isVport(c)){ r = (r+ROWS)%ROWS; }          // portal columns wrap vertically
-    if(r<0||r>=ROWS || c<0||c>=COLS) return true;
+    if(r<0||r>=ROWS) return true;
+    if(r===10||r===11){ c = (c+COLS)%COLS; }      // the classic left<->right side tunnel
+    if(c<0||c>=COLS) return true;
     return maze[r].charAt(c) === '#';
   }
   function open(c,r){ return !wallAt(c,r); }
@@ -346,8 +342,6 @@
   function wrapPos(e){
     if(e.px < 0) e.px += COLS*TILE;
     else if(e.px >= COLS*TILE) e.px -= COLS*TILE;
-    if(e.py < 0) e.py += ROWS*TILE;               // vertical portal wrap (only reachable via a portal column)
-    else if(e.py >= ROWS*TILE) e.py -= ROWS*TILE;
   }
 
   function stepPac(){
@@ -378,21 +372,20 @@
     while(head < q.length){
       var cur = q[head++], c = cur[0], r = cur[1];
       for(var i=0;i<4;i++){
-        var nc = c+dd[i][0], nr = r+dd[i][1], wc = nc, wr = nr;
-        if(nr===10||nr===11) wc = (nc+COLS)%COLS;          // side tunnel wrap
-        if(wc===5||wc===13) wr = (nr+ROWS)%ROWS;           // vertical portal wrap
-        if(wc < 0 || wc >= COLS || wr < 0 || wr >= ROWS || !open(wc,wr)) continue;
-        var k = wc+','+wr; if(seen[k]) continue;
+        var nc = c+dd[i][0], nr = r+dd[i][1];
+        if(nr < 0 || nr >= ROWS) continue;
+        var wc = (nr===10||nr===11) ? ((nc+COLS)%COLS) : nc;   // side tunnel wrap
+        if(wc < 0 || wc >= COLS || !open(wc,nr)) continue;
+        var k = wc+','+nr; if(seen[k]) continue;
         seen[k] = 1; prev[k] = c+','+r;
-        if(wc === tc && wr === tr){
+        if(wc === tc && nr === tr){
           var ck = k;
           while(prev[ck] !== start) ck = prev[ck];
           var p = ck.split(','), fc = +p[0], fr = +p[1], dx = fc-sc, dy = fr-sr;
-          if(dx > 1) dx = -1; else if(dx < -1) dx = 1;    // normalise a wrap first step
-          if(dy > 1) dy = -1; else if(dy < -1) dy = 1;
+          if(dx > 1) dx = -1; else if(dx < -1) dx = 1;    // normalise a tunnel-wrap first step
           return { x: (dx>0?1:dx<0?-1:0), y: (dy>0?1:dy<0?-1:0) };
         }
-        q.push([wc,wr]);
+        q.push([wc,nr]);
       }
     }
     return {x:0,y:0};
@@ -420,43 +413,28 @@
     return d2 > 64 ? { c:p.c, r:p.r } : g.scatter;
   }
 
-  // toroidal cell distance (accounts for the side tunnels and the top/bottom
-  // portals) so ghosts treat a wrap-around as the short way and use it to cut you off
-  function toroid(a, b, span){ var d = Math.abs(a-b); return Math.min(d, span-d); }
-  function cellDist(nc, nr, tc, tr){
-    var dx = toroid(nc, tc, COLS), dy = toroid(nr, tr, ROWS);
-    return dx*dx + dy*dy;
-  }
+  // The authentic ghost rule: at a junction pick the non-reversing direction whose
+  // resulting tile is closest (straight-line) to the target, breaking ties in the
+  // fixed order up > left > down > right. Loops resolve because scatter/chase keeps
+  // flipping their targets and Pac keeps moving - no random or anti-orbit hacks.
   function chooseGhostDir(g, gi){
     var cell = cellOf(g);
-    if(cell.c < 0 || cell.c >= COLS || cell.r < 0 || cell.r >= ROWS){ wrapPos(g); cell = cellOf(g); }
+    if(cell.c < 0 || cell.c >= COLS){ wrapPos(g); cell = cellOf(g); }
     var opts = [], k, names = ['up','left','down','right'];
     for(k=0;k<names.length;k++){
       var d = DIRS[names[k]];
-      if(d.x === -g.dir.x && d.y === -g.dir.y) continue;      // no reversing
+      if(d.x === -g.dir.x && d.y === -g.dir.y) continue;      // ghosts never reverse
       var nc2 = cell.c + d.x, nr2 = cell.r + d.y;
-      if(open(nc2, nr2) && !inPen(nc2, nr2)) opts.push(d);    // live ghosts never re-enter the pen
+      if(open(nc2, nr2) && !inPen(nc2, nr2)) opts.push(d);    // and never re-enter the pen
     }
-    if(!opts.length) opts.push({x:-g.dir.x, y:-g.dir.y});      // dead end: turn back
-    if(g.mode === 'fright'){
-      g.dir = opts[Math.floor(Math.random()*opts.length)];
-      return;
+    if(!opts.length) opts.push({x:-g.dir.x, y:-g.dir.y});      // dead end: reverse
+    if(g.mode === 'fright'){ g.dir = opts[Math.floor(Math.random()*opts.length)]; return; }
+    var t = ghostTarget(g, gi), bestD = 1e18, bestDir = opts[0];
+    for(k=0;k<opts.length;k++){
+      var nc = cell.c + opts[k].x, nr = cell.r + opts[k].y;
+      var dd = (nc-t.c)*(nc-t.c) + (nr-t.r)*(nr-t.r);
+      if(dd < bestD){ bestD = dd; bestDir = opts[k]; }        // strictly-less keeps the tie order
     }
-    // Anti-orbit: prefer options that do NOT revisit a recently-seen cell. If a
-    // ghost is circling, its recent cells fill the trail and it's forced to break out.
-    g.trail = g.trail || [];
-    var fresh = [];
-    for(k=0;k<opts.length;k++){ var fc = ((cell.c+opts[k].x)+COLS)%COLS, fr = ((cell.r+opts[k].y)+ROWS)%ROWS;
-      if(g.trail.indexOf(fc+','+fr) < 0) fresh.push(opts[k]); }
-    var pool = fresh.length ? fresh : opts;
-    var t = ghostTarget(g, gi), bestD = 1e18, bestDir = pool[0];
-    for(k=0;k<pool.length;k++){
-      var nc = cell.c + pool[k].x, nr = cell.r + pool[k].y;
-      var dd = cellDist(nc, nr, t.c, t.r);
-      if(dd < bestD){ bestD = dd; bestDir = pool[k]; }
-    }
-    if(pool.length > 1 && Math.random() < 0.10) bestDir = pool[Math.floor(Math.random()*pool.length)];
-    g.trail.push(cell.c + ',' + cell.r); if(g.trail.length > 10) g.trail.shift();
     g.dir = bestDir;
   }
 
