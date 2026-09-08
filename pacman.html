@@ -759,11 +759,26 @@
   requestAnimationFrame(loop);
 
   // expose a tiny hook for the automated self-check
-  window.__pac = { mazes:LAYOUTS.length, wallAt:wallAt, load:loadLevel, dotsLeft:function(){ return dotsLeft; },
-                   start:PAC_START, cols:COLS, rows:ROWS, ghosts:function(){ return ghosts.length; },
-                   hasAudio: !!Snd,
-                   gpos:function(){ return ghosts.map(function(g){ return Math.round(g.px)+','+Math.round(g.py)+':'+g.mode; }).join('|'); },
-                   eatFirst:function(){ if(ghosts[0]){ ghosts[0].mode='eyes'; } } };
+  // Test/observability hook: drive the real simulation deterministically, one
+  // fixed step at a time, WITHOUT requestAnimationFrame - so headless tests can
+  // fast-forward gameplay and assert on it. Inert unless called.
+  window.__pac = {
+    mazes:LAYOUTS.length, wallAt:wallAt, load:loadLevel, dotsLeft:function(){ return dotsLeft; },
+    start:PAC_START, cols:COLS, rows:ROWS, ghosts:function(){ return ghosts.length; }, hasAudio:!!Snd,
+    state:function(){ return state; }, score:function(){ return score; }, lives:function(){ return lives; },
+    level:function(){ return levelIdx; },
+    setWant:function(dx,dy){ pac.want={x:dx,y:dy}; },
+    pcell:function(){ var c=cellOf(pac); return c.c+','+c.r; },
+    gcell:function(i){ var c=cellOf(ghosts[i]); return c.c+','+c.r+':'+ghosts[i].mode; },
+    gpos:function(){ return ghosts.map(function(g){ var c=cellOf(g); return c.c+','+c.r+':'+g.mode; }).join('|'); },
+    eatFirst:function(){ if(ghosts[0]) ghosts[0].mode='eyes'; },
+    sim:function(n){ for(var i=0;i<n && state==='playing';i++){
+      stepPac(); if(state!=='playing') break;
+      for(var g=0;g<ghosts.length;g++) stepGhost(ghosts[g], g);
+      checkGhosts(); if(state!=='playing') break;
+      updateModes(STEP);
+    } }
+  };
 })();
 </script>
 </body>

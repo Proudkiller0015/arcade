@@ -197,32 +197,27 @@
     var pcx = rint(5,8);
     player={ px:cx(pcx), py:cyy(1), dir:{x:0,y:0}, face:{x:0,y:1}, frozen:false };
     function carve(cc,rr){ if(cc>=1 && cc<COLS-1 && rr>=2 && rr<ROWS) grid[rr][cc]=0; }
-    function carvedCells(){ var out=[]; for(var rr=2;rr<ROWS;rr++) for(var cc=1;cc<COLS-1;cc++) if(grid[rr][cc]===0) out.push({c:cc,r:rr}); return out; }
-    // player's vertical shaft from the surface
-    var depth=rint(6,10); for(r=2;r<=depth;r++) carve(pcx,r);
-    // branching corridors grown off the existing network (keeps it all connected)
-    var branches=rint(5,7), b;
-    for(b=0;b<branches;b++){
-      var cur=carvedCells(); if(!cur.length) break;
-      var st=cur[rint(0,cur.length-1)], cc=st.c, rr=st.r, steps=rint(4,8), horiz=Math.random()<0.5, s2;
-      for(s2=0;s2<steps;s2++){
-        if(horiz) cc += (Math.random()<0.5?-1:1); else rr += (Math.random()<0.5?-1:1);
-        cc=Math.max(1,Math.min(COLS-2,cc)); rr=Math.max(2,Math.min(ROWS-1,rr));
-        carve(cc,rr);
-        if(Math.random()<0.3) horiz=!horiz;
-      }
-    }
-    var net=carvedCells();
-    // enemies placed on the network, away from the player's start
-    var n=Math.min(7, 3+level), placed=0, tries=0;
-    while(placed<n && tries<500){ tries++;
-      if(!net.length) break;
-      var cell=net[rint(0,net.length-1)];
-      if(Math.abs(cell.c-pcx) + Math.abs(cell.r-2) < 4) continue;
-      var occ=false; for(q=0;q<enemies.length;q++){ var eq=cellOf(enemies[q]); if(eq.c===cell.c && eq.r===cell.r) occ=true; } if(occ) continue;
+    // player's short shaft from the surface
+    var depth=rint(4,7); for(r=2;r<=depth;r++) carve(pcx,r);
+    // a couple of random starter tunnels for early mobility
+    var segs=rint(1,2), s;
+    for(s=0;s<segs;s++){ var rr2=rint(4,ROWS-3), c0=rint(1,COLS-6), len=rint(3,6); for(c=c0;c<Math.min(COLS-1,c0+len);c++) carve(c,rr2); }
+    // enemies in SPREAD pockets across the field: never in the player's shaft, and
+    // kept apart from each other. Each gets a little pocket; you dig to hunt them,
+    // and (rarely) they ghost toward you.
+    var n=Math.min(7, 3+level), placed=0, tries=0, minSpread=4;
+    while(placed<n && tries<900){ tries++;
+      if(tries===500) minSpread=2;
+      var ec=rint(2,COLS-3), er=rint(4,ROWS-3);
+      if(Math.abs(ec-pcx)<=1 && er<=depth+1) continue;   // out of the player's dig path
+      var bad=false;
+      for(q=0;q<enemies.length;q++){ var eq=cellOf(enemies[q]);
+        if(Math.abs(eq.c-ec)+Math.abs(eq.r-er) < minSpread){ bad=true; break; } }
+      if(bad) continue;
+      carve(ec,er); carve(ec+1,er); carve(ec-1,er);      // small pocket
       var type = Math.random()<0.4?'fygar':'pooka';
-      enemies.push({ px:cx(cell.c), py:cyy(cell.r), dir:{x:(Math.random()<0.5?-1:1),y:0}, type:type,
-        inflate:0, decay:0, stun:0, ghost:false, ghostT:0, ghostCD:14+Math.random()*12, fireT:3+Math.random()*3, fire:0, alive:true });
+      enemies.push({ px:cx(ec), py:cyy(er), dir:{x:(Math.random()<0.5?-1:1),y:0}, type:type,
+        inflate:0, decay:0, stun:0, ghost:false, ghostT:0, ghostCD:12+Math.random()*10, fireT:3+Math.random()*3, fire:0, alive:true });
       placed++;
     }
     // rocks: in dirt, with dirt directly below so they don't fall until you dig
@@ -536,7 +531,16 @@
   requestAnimationFrame(loop);
 
   window.__digdug = { enemies:function(){ return enemies.length; }, alive:function(){ var n=0; for(var i=0;i<enemies.length;i++) if(enemies[i].alive) n++; return n; },
-    rocks:function(){ return rocks.length; }, fygars:function(){ var n=0; for(var i=0;i<enemies.length;i++) if(enemies[i].type==='fygar') n++; return n; }, hasAudio:!!Snd };
+    rocks:function(){ return rocks.length; }, fygars:function(){ var n=0; for(var i=0;i<enemies.length;i++) if(enemies[i].type==='fygar') n++; return n; }, hasAudio:!!Snd,
+    // deterministic sim hooks (inert unless called) - drive the fixed-step logic without RAF
+    state:function(){ return state; }, score:function(){ return score; },
+    pp:function(){ return Math.round(player.px)+','+Math.round(player.py); },
+    epos:function(){ return enemies.map(function(e){ var c=cellOf(e); return c.c+','+c.r+(e.ghost?'g':''); }).join('|'); },
+    key:function(k,v){ keys[k]=v; }, pump2:function(){ pump(); },
+    sim:function(n){ for(var i=0;i<n && state==='playing';i++){
+      stepPlayer(); for(var e=0;e<enemies.length;e++) stepEnemy(enemies[e], STEP);
+      updateHarpoon(STEP); updateFlames(STEP); stepRocks(STEP); contact();
+    } } };
 })();
 </script>
 </body>
