@@ -60,6 +60,10 @@ Config.defaultserver = {
 };
 Config.server = Config.defaultserver;
 
+// Skip the cross-domain storage iframe, which otherwise hangs forever on a
+// host that play.pokemonshowdown.com does not know about.
+Config.testclient = true;
+
 // The main-menu bot panel. Editing this file is enough to change the list.
 Config.botChallenge = {
 	name: 'Velvet Bunny',
