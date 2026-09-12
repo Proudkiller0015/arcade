@@ -29,6 +29,15 @@
   .pads{ display:grid; grid-template-columns:repeat(4,1fr); gap:8px; width:100%; }
   .tbtn{ -webkit-appearance:none; appearance:none; background:var(--panel); color:var(--text); border:1px solid #2e2e40; border-radius:12px; height:62px; font-size:24px; display:flex; align-items:center; justify-content:center; font-family:inherit; cursor:pointer; touch-action:none; -webkit-tap-highlight-color:transparent; }
   .tbtn:active{ background:#23232f; border-color:var(--accent); transform:translateY(1px); }
+  .speed{ display:flex; align-items:center; gap:10px; margin:0 0 10px; padding:8px 12px; background:var(--panel); border:1px solid #2e2e40; border-radius:12px; }
+  .speed .label{ margin:0; flex:0 0 auto; }
+  .speed output{ flex:0 0 42px; text-align:right; font-size:13px; font-weight:650; font-variant-numeric:tabular-nums; color:var(--accent); }
+  #spd{ -webkit-appearance:none; appearance:none; flex:1 1 auto; min-width:0; height:28px; background:transparent; touch-action:pan-y; }
+  #spd::-webkit-slider-runnable-track{ height:6px; border-radius:3px; background:linear-gradient(90deg,var(--accent) 0 var(--fill,50%), #2e2e40 var(--fill,50%) 100%); }
+  #spd::-moz-range-track{ height:6px; border-radius:3px; background:#2e2e40; }
+  #spd::-moz-range-progress{ height:6px; border-radius:3px; background:var(--accent); }
+  #spd::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:24px; height:24px; margin-top:-9px; border-radius:50%; background:var(--text); border:2px solid var(--accent); box-shadow:0 2px 6px #0008; cursor:pointer; }
+  #spd::-moz-range-thumb{ width:20px; height:20px; border-radius:50%; background:var(--text); border:2px solid var(--accent); box-shadow:0 2px 6px #0008; cursor:pointer; }
   #btnPause, #btnMute{ display:none; position:absolute; top:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; }
   #btnPause{ right:6px; } #btnMute{ left:6px; }
   body.touch #touch{ display:block; } body.touch #btnPause, body.touch #btnMute{ display:flex; }
@@ -65,7 +74,13 @@
       recorded anywhere. A fan-made tribute, not affiliated with any rights holder. Provided as-is, for fun.</span>
     </div>
   </aside>
-  <div id="touch" aria-hidden="true"><div class="pads">
+  <div id="touch" aria-hidden="true">
+    <div class="speed">
+      <span class="label">Speed</span>
+      <input id="spd" type="range" min="0.5" max="2" step="0.1" value="1" aria-label="Note scroll speed">
+      <output id="spdVal" for="spd">1.0&times;</output>
+    </div>
+    <div class="pads">
     <button class="tbtn" data-lane="0" tabindex="-1">&#9664;</button>
     <button class="tbtn" data-lane="1" tabindex="-1">&#9660;</button>
     <button class="tbtn" data-lane="2" tabindex="-1">&#9650;</button>
@@ -171,7 +186,8 @@
   var DIFF_NAME=['','Easy','Normal','Hard','Expert','HARDCORE','★ FINAL'], DIFF_COL=['','#5ad469','#14c8ff','#ffd54a','#ff2fa6','#ff5500','#e01030'];
 
   var BW=380, BH=520, LANES=4, LANEW=BW/LANES, TARGETY=70, LEAD=1.7;
-  var PXPS=(BH-TARGETY)/LEAD;   // scroll pixels/sec so a note travels bottom->target in LEAD s
+  var PXPS0=(BH-TARGETY)/LEAD;  // scroll pixels/sec so a note travels bottom->target in LEAD s
+  var spd=1, PXPS=PXPS0;        // scroll-speed multiplier (visual only - never touches judging)
   var LANE_ARROW=['◀','▼','▲','▶'], LANE_COL=['#ff2fa6','#14c8ff','#5ad469','#ffd54a'];
   var HIT_PERF=0.055, HIT_GOOD=0.12, MISS_AT=0.17;
 
@@ -182,6 +198,16 @@
 
   function loadBest(k){ try{ return parseInt(localStorage.getItem('dance.best.'+k),10)||0; }catch(e){ return 0; } }
   function saveBest(k,v){ try{ localStorage.setItem('dance.best.'+k, String(v)); }catch(e){} }
+  // Scroll speed: higher = notes spread further apart and enter the screen later.
+  // Purely a rendering scale - PXPS is only ever read by draw(), so the hit windows are untouched.
+  function setSpeed(v, persist){
+    var n=parseFloat(v); if(!isFinite(n)) n=1;
+    spd=Math.round(Math.min(2,Math.max(0.5,n))*10)/10; PXPS=PXPS0*spd;
+    var sl=document.getElementById('spd'), out=document.getElementById('spdVal');
+    if(sl){ if(+sl.value!==spd) sl.value=String(spd); sl.style.setProperty('--fill', ((spd-0.5)/1.5*100)+'%'); }
+    if(out) out.textContent=spd.toFixed(1)+'×';
+    if(persist){ try{ localStorage.setItem('dance.speed', String(spd)); }catch(e){} }
+  }
 
   var song, notes, melodyEvents, bassEvents, mIdx, bIdx, songStart, useAudio, simTime;
   var score, combo, maxCombo, life, hits, perfects, state='select', judgeText='', judgeT=0, endT=0;
@@ -419,6 +445,14 @@
 
   (function setupTouch(){ var pad=document.getElementById('touch'), pauseBtn=document.getElementById('btnPause'), muteBtn=document.getElementById('btnMute');
     if(pad){ var bs=pad.querySelectorAll('.tbtn'); for(var i=0;i<bs.length;i++){ (function(b){ var l=+b.getAttribute('data-lane'); b.addEventListener('pointerdown',function(e){ e.preventDefault(); hitLane(l); }); })(bs[i]); } }
+    var sl=document.getElementById('spd');
+    if(sl){ var saved=1; try{ saved=parseFloat(localStorage.getItem('dance.speed'))||1; }catch(e){}
+      setSpeed(saved,false);
+      sl.addEventListener('input', function(){ setSpeed(parseFloat(sl.value),true); });
+      // the slider lives above the pads - keep its drags from being read as lane taps
+      sl.addEventListener('pointerdown', function(e){ e.stopPropagation(); });
+      sl.addEventListener('keydown', function(e){ e.stopPropagation(); });
+    }
     function tap(btn,fn){ btn.addEventListener('pointerdown',function(e){ e.preventDefault(); fn(); }); }
     if(pauseBtn) tap(pauseBtn, togglePause); if(muteBtn) tap(muteBtn, function(){ Snd.toggle(); syncMute(); }); syncMute();
     function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(pad) pad.setAttribute('aria-hidden','false'); }
@@ -433,6 +467,7 @@
     laneHist:function(){ var h=[0,0,0,0]; if(notes) notes.forEach(function(n){ h[n.lane]++; }); return h; },
     _chartFromBuffer:function(buf,kf,dens){ return buildChartFromBuffer(buf,kf,dens); },
     songs:function(){ return SONGS.map(function(s){return s.key;}); }, hasAudio:function(){ return Snd.now()!=null; },
+    speed:function(){ return spd; }, pxps:function(){ return PXPS; }, setSpeed:function(v){ setSpeed(v,true); return spd; },
     start:function(k){ var sg=SONGS.filter(function(s){return s.key===k;})[0]||SONGS[0]; startSong(sg); },
     // deterministic test driver: advance time and auto-hit every note near its beat.
     // Force the manual clock (headless audio clock does not tick synchronously).
