@@ -1872,7 +1872,7 @@ return buf;
 }
 
 if(window.Net){
-Net("/config/colors.json?"+Math.random()).get().then(function(response){
+Net("config/colors.json?"+Math.random()).get().then(function(response){
 var data=JSON.parse(response);
 Object.assign(Config.customcolors,data);
 })["catch"](function(){});
