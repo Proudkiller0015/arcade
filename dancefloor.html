@@ -97,6 +97,13 @@
     function init(){ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return false; actx=new AC();
       master=actx.createGain(); master.gain.value=muted?0:0.8; master.connect(actx.destination); return true; }
     function ok(){ if(!actx && !init()) return false; if(actx.state==='suspended') actx.resume(); return true; }
+    // Phones only allow sound to start on a finger LIFT (touchend/pointerup/click), not on touch-down: a context made on
+    // pointerdown stays suspended there. So wake it on every lift, and play a silent blip once to fully unlock older iOS.
+    // iOS: play as media, so the ringer's silent switch doesn't mute the game.
+    try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
+    var unlocked=false;
+    function unlock(){ if(!ok()) return; if(!unlocked && actx.state==='running'){ unlocked=true; try{ var b=actx.createBuffer(1,1,22050), s=actx.createBufferSource(); s.buffer=b; s.connect(actx.destination); s.start(0); }catch(e){} } }
+    ['touchend','pointerup','click','keydown'].forEach(function(ev){ document.addEventListener(ev, unlock, true); });
     function mf(m){ return 440*Math.pow(2,(m-69)/12); }
     function play(f,at,dur,type,vol){ if(!actx) return; var o=actx.createOscillator(),g=actx.createGain(); o.type=type||'square';
       o.frequency.setValueAtTime(f,at); g.gain.setValueAtTime(0.0001,at); g.gain.exponentialRampToValueAtTime(vol,at+0.01);
