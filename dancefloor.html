@@ -279,7 +279,14 @@
   // A cheated song never saves a best score.
   var autoKey=false, autoTouch=false, usedAuto=false, held=[false,false,false,false];
   function autoOn(){ return autoKey||autoTouch; }
-  function resetScore(){ autoTouch=false; usedAuto=false; score=0; combo=0; maxCombo=0; life=50; hits=0; perfects=0; mIdx=0; bIdx=0; judgeT=0; }
+  // Streak callouts (the League idea, in combo words): a big announcement at each combo milestone, hotter each time;
+  // breaking a 25+ streak = COMBO BROKEN
+  var STREAKS=[[10,'NICE COMBO','#ffd54a'],[25,'HOT STREAK','#ffa630'],[50,'BLAZING COMBO','#ff6a00'],[75,'INFERNO STREAK','#ff3b1f'],[100,'GODLIKE COMBO','#ff2fa6'],[150,'LEGENDARY STREAK','#b01cff']];
+  var ann=null;
+  function announce(text,col,lvl){ ann={text:text,col:col,t:performance.now(),lvl:lvl};
+    if(lvl>0){ for(var k=0;k<3;k++) Snd.sfx(440*Math.pow(1.26,lvl+k),0.12,'square',0.14,660*Math.pow(1.26,lvl+k)); } else Snd.sfx(330,0.3,'sawtooth',0.16,110); }
+  function streakCall(){ for(var k=0;k<STREAKS.length;k++) if(combo===STREAKS[k][0]) announce(STREAKS[k][1],STREAKS[k][2],k+1); }
+  function resetScore(){ ann=null; autoTouch=false; usedAuto=false; score=0; combo=0; maxCombo=0; life=50; hits=0; perfects=0; mIdx=0; bIdx=0; judgeT=0; }
 
   // Build a chart from a real audio buffer by TWO-BAND onset detection, so the arrows
   // actually follow the music: low-frequency hits (kick/bass) fall on the left/down
@@ -404,12 +411,12 @@
     var pts, txt;
     if(delta<=HIT_PERF){ pts=300; txt='PERFECT'; perfects++; life=Math.min(100,life+2); }
     else { pts=100; txt='GOOD'; life=Math.min(100,life+1); }
-    combo++; if(combo>maxCombo)maxCombo=combo; hits++;
+    combo++; if(combo>maxCombo)maxCombo=combo; hits++; streakCall();
     score += pts + Math.floor(combo/10)*10;
     judgeText=txt; judgeT=0.5; syncUI();
     Snd.sfx(delta<=HIT_PERF?1046:784,0.05,'square',0.14, delta<=HIT_PERF?1400:900);
   }
-  function miss(){ combo=0; life=Math.max(0,life-8); judgeText='MISS'; judgeT=0.5; syncUI();
+  function miss(){ if(combo>=25) announce('COMBO BROKEN','#9aa3b5',0); combo=0; life=Math.max(0,life-8); judgeText='MISS'; judgeT=0.5; syncUI();
     if(life<=0 && state==='playing') fail(); }
   function hitLane(lane){ if(state!=='playing') return; var st=songTime(), best=null, bd=1e9;
     for(var i=0;i<notes.length;i++){ var n=notes[i]; if(n.judged||n.lane!==lane) continue; var dl=Math.abs(n.t-st); if(dl<=HIT_GOOD && dl<bd){ bd=dl; best=n; } }
@@ -470,6 +477,12 @@
       }
       // groove bar
       ctx.fillStyle='#26263a'; ctx.fillRect(0,0,BW,8); ctx.fillStyle= life<25?'#e05a5a':'#5ad469'; ctx.fillRect(0,0,BW*life/100,8);
+      if(ann){ var age=(performance.now()-ann.t)/1000; if(age>1.8) ann=null; else {
+        var sc=age<0.18 ? 0.4+age/0.18*0.75 : age<0.3 ? 1.15-(age-0.18)/0.12*0.15 : 1; // punch in, settle
+        ctx.save(); ctx.globalAlpha=age>1.3?Math.max(0,(1.8-age)/0.5):1; ctx.translate(BW/2,BH*0.24); ctx.scale(sc,sc);
+        ctx.font='900 '+(ann.text.length>12?28:34)+'px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.lineWidth=6; ctx.strokeStyle='rgba(0,0,0,0.75)'; ctx.strokeText(ann.text,0,0);
+        ctx.shadowColor=ann.col; ctx.shadowBlur=18; ctx.fillStyle=ann.col; ctx.fillText(ann.text,0,0); ctx.restore(); } }
       if(judgeT>0){ ctx.globalAlpha=Math.min(1,judgeT*2.2); ctx.fillStyle= judgeText==='PERFECT'?'#ffd54a':judgeText==='GOOD'?'#5ad469':'#e05a5a'; ctx.font='800 30px system-ui'; ctx.textAlign='center'; ctx.fillText(judgeText, BW/2, BH*0.42); ctx.globalAlpha=1; }
       // the streak catches fire: a flame glow rises from the target line as the combo grows, and the combo text heats up
       var heat=Math.min(1, combo/100);
