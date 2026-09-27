@@ -39,7 +39,7 @@
   #spd::-webkit-slider-thumb{ -webkit-appearance:none; appearance:none; width:24px; height:24px; margin-top:-9px; border-radius:50%; background:var(--text); border:2px solid var(--accent); box-shadow:0 2px 6px #0008; cursor:pointer; }
   #spd::-moz-range-thumb{ width:20px; height:20px; border-radius:50%; background:var(--text); border:2px solid var(--accent); box-shadow:0 2px 6px #0008; cursor:pointer; }
   #btnPause, #btnMute{ display:none; position:absolute; top:6px; z-index:2; padding:0; width:38px; height:38px; border-radius:9px; background:#17171fcc; border:1px solid #2e2e40; color:var(--text); align-items:center; justify-content:center; font-size:14px; font-family:inherit; cursor:pointer; }
-  #btnPause{ right:6px; } #btnMute{ left:6px; }
+  #btnPause{ right:6px; } #btnMute{ left:6px; -webkit-touch-callout:none; -webkit-user-select:none; user-select:none; touch-action:none; }
   body.touch #touch{ display:block; } body.touch #btnPause, body.touch #btnMute{ display:flex; }
   @media (pointer: coarse), (max-width: 680px){ body{ display:block; min-height:100dvh; } .wrap{ flex-direction:column; align-items:center; gap:10px; padding:10px 8px 16px; } .stage{ order:1; } #touch{ order:2; }
     .panel{ order:3; width:100%; max-width:440px; flex-direction:row; flex-wrap:wrap; justify-content:center; gap:8px; } .panel .row2{ display:contents; } .panel .stat{ flex:1 1 66px; min-width:66px; text-align:center; padding:6px 8px; }
@@ -275,7 +275,7 @@
   var mp3Source=null, bufCache={};
   function songTime(){ return useAudio ? (Snd.now()-songStart) : simTime; }
   function stopMp3(){ if(mp3Source){ try{ mp3Source.stop(); }catch(e){} mp3Source=null; } }
-  // Cheat (autoplay): hold Ctrl on a keyboard; on a phone, scrub a finger left-right fast on the pads to toggle it.
+  // Cheat (autoplay): hold Ctrl on a keyboard; on a phone, hold the sound button (a tap still mutes).
   // A cheated song never saves a best score.
   var autoKey=false, autoTouch=false, usedAuto=false, held=[false,false,false,false];
   function autoOn(){ return autoKey||autoTouch; }
@@ -509,15 +509,6 @@
 
   (function setupTouch(){ var pad=document.getElementById('touch'), pauseBtn=document.getElementById('btnPause'), muteBtn=document.getElementById('btnMute');
     if(pad){ var bs=pad.querySelectorAll('.tbtn'); for(var i=0;i<bs.length;i++){ (function(b){ var l=+b.getAttribute('data-lane'); b.addEventListener('pointerdown',function(e){ e.preventDefault(); held[l]=true; hitLane(l); }); var up=function(){ held[l]=false; }; b.addEventListener('pointerup',up); b.addEventListener('pointercancel',up); b.addEventListener('lostpointercapture',up); })(bs[i]); } }
-    // the phone cheat: a fast left-right scrub across the pads (4 direction changes in under 0.9s) toggles autoplay
-    if(pad){ var sx=null, dir=0, flips=[], lastX=0;
-      pad.addEventListener('pointerdown', function(e){ sx=lastX=e.clientX; dir=0; flips=[]; });
-      pad.addEventListener('pointermove', function(e){ if(sx==null) return; var dx=e.clientX-lastX; if(Math.abs(dx)<24) return;
-        var d=dx>0?1:-1; lastX=e.clientX; if(dir && d!==dir){ var now=performance.now(); flips.push(now); flips=flips.filter(function(t){ return now-t<900; });
-          if(flips.length>=4 && state==='playing'){ autoTouch=!autoTouch; flips=[]; judgeText=autoTouch?'AUTO ♪':'AUTO OFF'; judgeT=0.8; Snd.sfx(autoTouch?1320:440,0.08,'triangle',0.15,autoTouch?1760:330); } }
-        dir=d; });
-      var endScrub=function(){ sx=null; }; pad.addEventListener('pointerup',endScrub); pad.addEventListener('pointercancel',endScrub);
-    }
     var sl=document.getElementById('spd');
     if(sl){ var saved=1; try{ saved=parseFloat(localStorage.getItem('dance.speed'))||1; }catch(e){}
       setSpeed(saved,false);
@@ -527,7 +518,14 @@
       sl.addEventListener('keydown', function(e){ e.stopPropagation(); });
     }
     function tap(btn,fn){ btn.addEventListener('pointerdown',function(e){ e.preventDefault(); fn(); }); }
-    if(pauseBtn) tap(pauseBtn, togglePause); if(muteBtn) tap(muteBtn, function(){ Snd.toggle(); syncMute(); }); syncMute();
+    if(pauseBtn) tap(pauseBtn, togglePause); if(muteBtn){ // tap = mute/unmute; HOLD = the phone cheat: sound on, and the song plays itself while held (like Ctrl)
+      var holdT=null, holding=false;
+      muteBtn.addEventListener('pointerdown', function(e){ e.preventDefault(); holding=false; clearTimeout(holdT);
+        holdT=setTimeout(function(){ holding=true; if(Snd.isMuted()){ Snd.toggle(); syncMute(); } autoTouch=true; }, 400); });
+      var release=function(e){ if(e) e.preventDefault(); clearTimeout(holdT); if(holding){ holding=false; autoTouch=false; } else if(holdT!==null){ Snd.toggle(); syncMute(); } holdT=null; };
+      muteBtn.addEventListener('pointerup', release); muteBtn.addEventListener('pointercancel', function(){ clearTimeout(holdT); holdT=null; holding=false; autoTouch=false; });
+      muteBtn.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+    } syncMute();
     function enableTouch(){ if(document.body.classList.contains('touch'))return; document.body.classList.add('touch'); if(pad) pad.setAttribute('aria-hidden','false'); }
     var isTouch=(navigator.maxTouchPoints>0)||('ontouchstart'in window)||(window.matchMedia&&window.matchMedia('(pointer: coarse)').matches); if(isTouch) enableTouch(); window.addEventListener('touchstart',enableTouch,{passive:true,once:true});
   })();
