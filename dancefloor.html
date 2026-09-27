@@ -185,9 +185,13 @@
       dens:{ minGap:0.15, laneGap:0.09, thrMul:1.3, thrAdd:0.0006, dist:{ dbl:0.15, tri:0.05 }, finale:true, melody:true } },
     // True final boss - deliberately, comically hard (near-impossible), dense chart.
     { key:'scarlet', name:'Scarlet Devil', mp3:'ScarletDevil.mp3', diffN:6, final:true,
-      dens:{ minGap:0.11, laneGap:0.10, thrMul:1.4, thrAdd:0.0005, doubles:true }, credit:'user-supplied fan arrangement' }
+      dens:{ minGap:0.11, laneGap:0.10, thrMul:1.4, thrAdd:0.0005, doubles:true }, credit:'user-supplied fan arrangement' },
+    // THE true hardest: Bad Apple!! - follows the lead melody with no speed cap, few chords, and HOLD notes on the notes the
+    // lead actually sustains, even mid-stream (other lanes keep coming while you hold).
+    { key:'badapple', name:'Bad Apple!!', mp3:'BadApple.mp3', diffN:7,
+      dens:{ minGap:0.07, laneGap:0.07, thrMul:1.3, thrAdd:0.0004, dist:{ dbl:0.06, tri:0 }, holds:{ sustain:0.3, keep:0.55, max:2.0 }, melody:true, contour:true }, credit:'user-supplied track' }
   ];
-  var DIFF_NAME=['','Easy','Normal','Hard','Expert','HARDCORE','★ FINAL'], DIFF_COL=['','#5ad469','#14c8ff','#ffd54a','#ff2fa6','#ff5500','#e01030'];
+  var DIFF_NAME=['','Easy','Normal','Hard','Expert','HARDCORE','★ FINAL','☠ TRUE FINAL'], DIFF_COL=['','#5ad469','#14c8ff','#ffd54a','#ff2fa6','#ff5500','#e01030','#b01cff'];
 
   var BW=380, BH=520, LANES=4, LANEW=BW/LANES, TARGETY=70, LEAD=1.7;
   var PXPS0=(BH-TARGETY)/LEAD;  // scroll pixels/sec so a note travels bottom->target in LEAD s
@@ -328,10 +332,16 @@
     for(i=0;i<kept.length;i++){ var hz=pitchAt(mono, Math.floor(kept[i].t*sr), sr); kept[i].midi = hz>0 ? (69+12*Math.log(hz/440)/Math.LN2) : null; if(kept[i].midi!=null) mids.push(kept[i].midi); }
     var lo=mids.length?Math.min.apply(null,mids):48, hi=mids.length?Math.max.apply(null,mids):72; if(hi-lo<4) hi=lo+4;
     var notes=[], fb=0, r1=-1, r2=-1;
-    for(i=0;i<kept.length;i++){ var m=kept[i].midi, lane;
-      if(m!=null){ var b=Math.floor((m-lo)/(hi-lo+0.001)*4); if(b<0)b=0; if(b>3)b=3; lane=b; }
+    for(i=0;i<kept.length;i++){ var m=kept[i].midi, lane, llo=lo, lhi=hi;
+      // dens.contour: map each note inside the pitch range of the melody AROUND it (+-3s), so every phrase spans the lanes
+      // the way the tune moves (instead of the whole song's range squashing a phrase into one or two lanes)
+      if(dens.contour && m!=null){ var win=[]; for(var w=i; w>=0 && kept[i].t-kept[w].t<=3; w--) if(kept[w].midi!=null) win.push(kept[w].midi);
+        for(w=i+1; w<kept.length && kept[w].t-kept[i].t<=3; w++) if(kept[w].midi!=null) win.push(kept[w].midi);
+        win.sort(function(x,y){return x-y;}); llo=win[Math.floor(win.length*0.15)]; lhi=win[Math.min(win.length-1,Math.floor(win.length*0.85))]; // robust: octave slips don't stretch it
+        if(lhi-llo<5){ var mid=(lhi+llo)/2; llo=mid-2.5; lhi=mid+2.5; } }
+      if(m!=null){ var b=Math.floor((m-llo)/(lhi-llo+0.001)*4); if(b<0)b=0; if(b>3)b=3; lane=b; }
       else lane=(fb++)%4;
-      if(lane===r1 && r1===r2) lane=(lane+1)%4;
+      if(lane===r1 && r1===r2 && !(dens.contour && m!=null)) lane=(lane+1)%4;
       r2=r1; r1=lane;
       var size = dist ? (kept[i].str>=pTri?3 : kept[i].str>=pDbl?2 : 1) : (kept[i].dbl?2:1);
       notes.push({t:kept[i].t, lane:lane, hit:false, judged:false});
@@ -343,6 +353,16 @@
     // Hidden Konami OPENING: force the first arrows to spell up up down down left right
     // left right, landing on the song's real beats. Just the sequence - no cheat effect.
     if(konamiOpen){ var KON=[2,2,1,1,0,3,0,3]; for(i=0;i<KON.length && i<out.length;i++) out[i].lane=KON[i]; }
+    // Hold notes (dens.holds): where the lead SUSTAINS after a note (its energy stays above `keep` x its peak for `sustain`+ seconds)
+    // the note is held for as long as it rings - even in the middle of a stream (other lanes keep coming). Only rule: nothing lands
+    // in the held lane before the hold ends.
+    if(dens.holds){ var HD=dens.holds, fps=sr/hop;
+      for(i=0;i<out.length;i++){ var hn=out[i]; if((i>0&&out[i-1].t===hn.t)||(i+1<out.length&&out[i+1].t===hn.t)) continue; // not chords
+        var f0=Math.floor(hn.t*fps), pk=0, ff; for(ff=f0; ff<Math.min(frames,f0+4); ff++) pk=Math.max(pk,envHi[ff]);
+        var fe=f0+4; while(fe<frames && envHi[fe]>=pk*HD.keep) fe++;
+        var sus=(fe-f0)/fps; if(sus<HD.sustain) continue;
+        var nxt=Infinity; for(var q2=i+1;q2<out.length;q2++){ if(out[q2].lane===hn.lane){ nxt=out[q2].t; break; } }
+        var len=Math.min(sus, HD.max, (nxt-hn.t)-0.12); if(len>=HD.sustain) hn.end=hn.t+len; } }
     // Grand finale: make the very last hit a full 4-arrow slam.
     if(dens.finale && out.length){ var T=out[out.length-1].t; out=out.filter(function(n){ return n.t < T-0.001; });
       for(var q=0;q<4;q++) out.push({t:T, lane:q, hit:false, judged:false}); }
