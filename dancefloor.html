@@ -10,7 +10,7 @@
   function Wrapped(){ var c=new (Function.prototype.bind.apply(AC,[null].concat([].slice.call(arguments))))(); list.push(c); return c; }
   Wrapped.prototype=AC.prototype; Wrapped.__unlockWrapped=true;
   window.AudioContext=Wrapped; if(window.webkitAudioContext) window.webkitAudioContext=Wrapped;
-  function wake(){ for(var i=0;i<list.length;i++){ var c=list[i]; if(c.state==='suspended'){ try{ c.resume(); var b=c.createBuffer(1,1,22050), s=c.createBufferSource(); s.buffer=b; s.connect(c.destination); s.start(0); }catch(e){} } } }
+  function wake(){ for(var i=0;i<list.length;i++){ var c=list[i]; if(c.state==='suspended' && !c.__paused){ try{ c.resume(); var b=c.createBuffer(1,1,22050), s=c.createBufferSource(); s.buffer=b; s.connect(c.destination); s.start(0); }catch(e){} } } }
   ['touchend','pointerup','click','keydown'].forEach(function(ev){ document.addEventListener(ev, wake, true); });
 })();</script>
 <meta charset="utf-8">
@@ -108,7 +108,8 @@
     try{ muted = localStorage.getItem(KEY)==='1'; }catch(e){}
     function init(){ var AC=window.AudioContext||window.webkitAudioContext; if(!AC) return false; actx=new AC();
       master=actx.createGain(); master.gain.value=muted?0:0.8; master.connect(actx.destination); return true; }
-    function ok(){ if(!actx && !init()) return false; if(actx.state==='suspended') actx.resume(); return true; }
+    var held=false; // paused on purpose: nothing may wake the audio until resume()
+    function ok(){ if(!actx && !init()) return false; if(actx.state==='suspended' && !held) actx.resume(); return true; }
     // Phones only allow sound to start on a finger LIFT (touchend/pointerup/click), not on touch-down: a context made on
     // pointerdown stays suspended there. So wake it on every lift, and play a silent blip once to fully unlock older iOS.
     // iOS: play as media, so the ringer's silent switch doesn't mute the game.
@@ -128,7 +129,9 @@
       playBuffer:function(buf,at){ if(!actx) return null; var s=actx.createBufferSource(); s.buffer=buf; var g=actx.createGain(); g.gain.value=0.9; s.connect(g); g.connect(master); s.start(at); return s; },
       sfx:function(f,dur,type,vol,f2){ if(!ok())return; var at=actx.currentTime; var o=actx.createOscillator(),g=actx.createGain(); o.type=type||'square'; o.frequency.setValueAtTime(f,at); if(f2)o.frequency.exponentialRampToValueAtTime(Math.max(1,f2),at+(dur||0.08)); g.gain.setValueAtTime(0.0001,at); g.gain.exponentialRampToValueAtTime(vol||0.2,at+0.008); g.gain.exponentialRampToValueAtTime(0.0001,at+(dur||0.08)); o.connect(g); g.connect(master); o.start(at); o.stop(at+(dur||0.08)+0.03); },
       toggle:function(){ muted=!muted; if(master)master.gain.value=muted?0:0.8; try{localStorage.setItem(KEY,muted?'1':'0');}catch(e){} return muted; },
-      isMuted:function(){ return muted; }
+      isMuted:function(){ return muted; },
+      pause:function(){ held=true; if(actx){ actx.__paused=true; if(actx.state==='running') actx.suspend(); } },
+      resume:function(){ held=false; if(actx){ actx.__paused=false; if(actx.state==='suspended') actx.resume(); } }
     };
   })('dance.muted');
 
@@ -417,14 +420,16 @@
       Snd.decode(cands[i]).then(function(buf){ bufCache[sg.key]=buf; if(state==='loading') go(buf); })
         .catch(function(e){ lastErr=String(e&&e.message||e); tryNext(i+1); }); })(0);
   }
-  function backToSelect(){ stopMp3(); state='select'; buildSongList(); showSelect(); }
+  function backToSelect(){ stopMp3(); Snd.resume(); state='select'; buildSongList(); showSelect(); }
 
   function syncUI(){ ui.score.textContent=score; ui.combo.textContent=combo; ui.best.textContent= song?loadBest(song.key):0; ui.life.textContent=Math.round(life)+'%'; }
   function showSelect(){ ui.ovT.textContent='BUNNY DANCE'; ui.ovS.textContent=(Snd.isMuted()?'\u{1F507} Sound is muted - press M or tap \u{1F507} to hear the music. ':'')+'Hit the arrows on the beat. Pick a track:'; ui.songList.style.display='flex'; ui.ovH.textContent=''; ui.ov.classList.remove('hidden'); }
   function showMsg(t,s,h){ ui.ovT.textContent=t; ui.ovS.textContent=s; ui.songList.style.display='none'; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
   function hideOverlay(){ ui.ov.classList.add('hidden'); }
   function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; if(state==='select' && ui.ovT && ui.ovT.textContent==='BUNNY DANCE') showSelect(); }
-  function togglePause(){ if(state==='playing'){ if(song&&song.mp3){ backToSelect(); return; } state='paused'; showMsg('PAUSED','Score '+score,'Press P to resume'); } else if(state==='paused'){ state='playing'; hideOverlay(); if(useAudio){ /* audio clock kept running; accept drift */ } } }
+  function togglePause(){ if(state==='playing'){ state='paused'; if(useAudio) Snd.pause(); // the audio clock freezes: music and arrows stop together
+      showMsg('PAUSED','Score '+score,'Press P or ⏸ to resume · Enter for song select'); }
+    else if(state==='paused'){ state='playing'; hideOverlay(); if(useAudio) Snd.resume(); } }
 
   function judge(delta){ // delta seconds abs
     var pts, txt;
