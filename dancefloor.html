@@ -401,10 +401,10 @@
   function backToSelect(){ stopMp3(); state='select'; buildSongList(); showSelect(); }
 
   function syncUI(){ ui.score.textContent=score; ui.combo.textContent=combo; ui.best.textContent= song?loadBest(song.key):0; ui.life.textContent=Math.round(life)+'%'; }
-  function showSelect(){ ui.ovT.textContent='BUNNY DANCE'; ui.ovS.textContent='Hit the arrows on the beat. Pick a track:'; ui.songList.style.display='flex'; ui.ovH.textContent=''; ui.ov.classList.remove('hidden'); }
+  function showSelect(){ ui.ovT.textContent='BUNNY DANCE'; ui.ovS.textContent=(Snd.isMuted()?'\u{1F507} Sound is muted - press M or tap \u{1F507} to hear the music. ':'')+'Hit the arrows on the beat. Pick a track:'; ui.songList.style.display='flex'; ui.ovH.textContent=''; ui.ov.classList.remove('hidden'); }
   function showMsg(t,s,h){ ui.ovT.textContent=t; ui.ovS.textContent=s; ui.songList.style.display='none'; ui.ovH.textContent=h; ui.ov.classList.remove('hidden'); }
   function hideOverlay(){ ui.ov.classList.add('hidden'); }
-  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; }
+  function syncMute(){ var b=document.getElementById('btnMute'); if(b) b.textContent=Snd.isMuted()?'\u{1F507}':'\u{1F50A}'; if(state==='select' && ui.ovT && ui.ovT.textContent==='BUNNY DANCE') showSelect(); }
   function togglePause(){ if(state==='playing'){ if(song&&song.mp3){ backToSelect(); return; } state='paused'; showMsg('PAUSED','Score '+score,'Press P to resume'); } else if(state==='paused'){ state='playing'; hideOverlay(); if(useAudio){ /* audio clock kept running; accept drift */ } } }
 
   function judge(delta){ // delta seconds abs
