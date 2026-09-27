@@ -454,6 +454,12 @@
     for(l=0;l<LANES;l++){ var cx=l*LANEW+LANEW/2; ctx.globalAlpha=0.35; ctx.fillStyle=LANE_COL[l]; ctx.font='700 26px system-ui'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(LANE_ARROW[l],cx,TARGETY); ctx.globalAlpha=1; }
     if(state==='playing'||state==='paused'){
       var st=songTime();
+      // streak fire: flames rise from the bottom of the board behind the arrows, taller and hotter as the combo grows
+      if(combo>=10){ var ht=Math.min(1, combo/100), fl=0.85+0.15*Math.sin(performance.now()/70)+0.08*Math.sin(performance.now()/23), fh=(40+260*ht)*fl;
+        var gr=ctx.createLinearGradient(0,BH,0,BH-fh); gr.addColorStop(0,'rgba(255,70,0,'+(0.30+0.35*ht)+')'); gr.addColorStop(0.45,'rgba(255,150,30,'+(0.14+0.2*ht)+')'); gr.addColorStop(1,'rgba(255,230,120,0)');
+        ctx.fillStyle=gr; ctx.fillRect(0,BH-fh,BW,fh);
+        for(var fk=0; fk<Math.floor(3+9*ht); fk++){ var fx=((fk*97+Math.floor(performance.now()/90)*31)%BW), fy=BH-((performance.now()/4+fk*53)%(fh||1));
+          ctx.fillStyle='rgba(255,'+(160+Math.floor(80*Math.random()))+',60,'+(0.5*(1-(BH-fy)/(fh||1)))+')'; ctx.beginPath(); ctx.arc(fx,fy,2+2*ht,0,6.283); ctx.fill(); } }
       for(var i=0;i<notes.length;i++){ var n=notes[i]; if(n.judged && !n.holding) continue;
         var y=TARGETY+(n.t-st)*PXPS; if(n.holding) y=TARGETY;
         if(n.end){ var ye=TARGETY+(n.end-st)*PXPS; if(ye>TARGETY-40 && y<BH+40){ var tw=LANEW*0.34, tx=n.lane*LANEW+LANEW/2-tw/2;
@@ -463,9 +469,14 @@
         ctx.shadowColor=LANE_COL[n.lane]; ctx.shadowBlur=8; ctx.fillText(LANE_ARROW[n.lane],cx,y); ctx.shadowBlur=0;
       }
       // groove bar
-      ctx.fillStyle='#26263a'; ctx.fillRect(0,BH-8,BW,8); ctx.fillStyle= life<25?'#e05a5a':'#5ad469'; ctx.fillRect(0,BH-8,BW*life/100,8);
+      ctx.fillStyle='#26263a'; ctx.fillRect(0,0,BW,8); ctx.fillStyle= life<25?'#e05a5a':'#5ad469'; ctx.fillRect(0,0,BW*life/100,8);
       if(judgeT>0){ ctx.globalAlpha=Math.min(1,judgeT*2.2); ctx.fillStyle= judgeText==='PERFECT'?'#ffd54a':judgeText==='GOOD'?'#5ad469':'#e05a5a'; ctx.font='800 30px system-ui'; ctx.textAlign='center'; ctx.fillText(judgeText, BW/2, BH*0.42); ctx.globalAlpha=1; }
-      if(combo>2){ ctx.fillStyle='#f2f2ef'; ctx.font='700 18px system-ui'; ctx.textAlign='center'; ctx.fillText(combo+' combo', BW/2, BH*0.42+30); }
+      // the streak catches fire: a flame glow rises from the target line as the combo grows, and the combo text heats up
+      var heat=Math.min(1, combo/100);
+      if(combo>2){ var fire= combo>=100?' 🔥🔥🔥🔥' : combo>=50?' 🔥🔥🔥' : combo>=25?' 🔥🔥' : combo>=10?' 🔥' : '';
+        ctx.fillStyle= combo>=100?'#ff3b1f' : combo>=50?'#ff6a00' : combo>=25?'#ffa630' : combo>=10?'#ffd54a' : '#f2f2ef';
+        ctx.shadowColor='#ff5a00'; ctx.shadowBlur= combo>=10 ? 6+14*heat : 0;
+        ctx.font='700 '+Math.round(18+8*heat)+'px system-ui'; ctx.textAlign='center'; ctx.fillText(combo+' combo'+fire, BW/2, BH*0.42+30); ctx.shadowBlur=0; }
     }
   }
 
