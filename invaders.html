@@ -1,6 +1,18 @@
 <!doctype html>
 <html lang="en">
 <head>
+<script>/* audio-unlock: phones only let sound start when a finger LIFTS (touchend/pointerup/click), so a sound engine made on
+   touch-down stays suspended and the game is silent. Track every AudioContext this page makes and resume it on every
+   lift, tap or key; on iOS, play as media so the ringer's silent switch doesn't mute the game. */
+(function(){ var AC=window.AudioContext||window.webkitAudioContext; if(!AC||AC.__unlockWrapped) return;
+  try{ if(navigator.audioSession) navigator.audioSession.type='playback'; }catch(e){}
+  var list=[];
+  function Wrapped(){ var c=new (Function.prototype.bind.apply(AC,[null].concat([].slice.call(arguments))))(); list.push(c); return c; }
+  Wrapped.prototype=AC.prototype; Wrapped.__unlockWrapped=true;
+  window.AudioContext=Wrapped; if(window.webkitAudioContext) window.webkitAudioContext=Wrapped;
+  function wake(){ for(var i=0;i<list.length;i++){ var c=list[i]; if(c.state==='suspended'){ try{ c.resume(); var b=c.createBuffer(1,1,22050), s=c.createBufferSource(); s.buffer=b; s.connect(c.destination); s.start(0); }catch(e){} } } }
+  ['touchend','pointerup','click','keydown'].forEach(function(ev){ document.addEventListener(ev, wake, true); });
+})();</script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Space Invaders</title>
